@@ -231,11 +231,10 @@ async function signIn(){
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
     + '&scope=' + encodeURIComponent('user:read:follows');
-  // Open in its own tab — navigating this app's own window away to a
-  // different site leaves it stranded once Android hands the cross-site
-  // request off to a browser tab.
-  window.open(url, '_blank');
-  setStatus('Finished signing in on the Twitch tab? Just switch back here.');
+  // With Digital Asset Links verified, Android routes the redirect back to
+  // this exact app rather than stranding it in a browser tab — a direct
+  // navigation lets that round-trip work as intended.
+  window.location.href = url;
 }
 
 function signOut(){
@@ -525,6 +524,10 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', () => {
   if(localStorage.getItem(LS.token)){ updateSignInButton(); loadFollowedLive(); }
 });
+// Covers the case where Android hands the OAuth redirect back to this exact
+// already-running app instance without a full page reload — only the hash
+// changes, so a plain page-load listener alone would miss it.
+window.addEventListener('hashchange', () => { handleOAuthRedirect(); });
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
