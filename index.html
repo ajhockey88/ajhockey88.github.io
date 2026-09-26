@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ThorStream</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#9147ff">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+:root{
+  --bg:#0e0e10; --panel:#18181b; --panel2:#1f1f23; --text:#efeff1;
+  --sub:#adadb8; --accent:#9147ff; --accent2:#772ce8; --border:#2d2d33;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f7f7f8; --panel:#ffffff; --panel2:#f0f0f2; --text:#18181b;
+    --sub:#53535f; --border:#e3e3e6;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e0e10; --panel:#18181b; --panel2:#1f1f23; --text:#efeff1;
+  --sub:#adadb8; --border:#2d2d33;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex; flex-direction:column; height:100%;
+}
+header{
+  flex:0 0 auto;
+  padding:8px 12px; padding-top:calc(8px + env(safe-area-inset-top,0px));
+  background:var(--panel); border-bottom:1px solid var(--border);
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  max-height:200px; overflow:hidden;
+  transition:max-height .25s ease, padding .25s ease, opacity .2s ease;
+}
+header.collapsed{
+  max-height:0; padding-top:0; padding-bottom:0; border-bottom:none; opacity:0; pointer-events:none;
+}
+#revealTab{
+  position:fixed; top:calc(env(safe-area-inset-top,0px) + 6px); right:10px; z-index:20;
+  padding:4px 10px; font-size:11px; border-radius:20px; opacity:.55; display:none;
+}
+#revealTab.show{display:block}
+header .brand{font-weight:800; color:var(--accent); margin-right:4px; white-space:nowrap}
+.ghost-btn{
+  background:transparent; border:1px solid var(--border); color:var(--text);
+}
+#signInBtn img.avatar{width:18px; height:18px; border-radius:50%; vertical-align:middle; margin-right:6px}
+#followedBar{
+  order:98; width:100%; display:flex; gap:6px; overflow-x:auto; padding-top:4px;
+}
+.followed-chip{
+  flex:0 0 auto; display:flex; align-items:center; gap:6px; background:var(--panel2);
+  border:1px solid var(--border); border-radius:16px; padding:4px 10px 4px 4px;
+  font-size:12px; cursor:pointer; white-space:nowrap;
+}
+.followed-chip img{width:22px; height:22px; border-radius:50%}
+.followed-chip .live-dot{width:7px; height:7px; border-radius:50%; background:#eb0400; margin-right:2px}
+input[type=text]{
+  flex:1; min-width:120px; background:var(--panel2); border:1px solid var(--border);
+  color:var(--text); border-radius:8px; padding:8px 10px; font-size:14px;
+}
+button{
+  background:var(--accent); color:#fff; border:none; border-radius:8px;
+  padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer;
+}
+button:active{background:var(--accent2)}
+button:disabled{opacity:.5}
+#status{font-size:11px; color:var(--sub); width:100%; order:99}
+
+/* Fill all remaining vertical space, stream left / chat right, no page scroll */
+main{
+  flex:1; min-height:0; display:flex; flex-direction:row;
+}
+#videoWrap{
+  position:relative; flex:1 1 auto; min-width:0; height:100%; background:#000;
+}
+#videoWrap iframe{position:absolute; inset:0; width:100%; height:100%; border:0; display:block}
+#videoPlaceholder{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:var(--sub); font-size:13px; text-align:center; padding:16px;
+}
+#chat{
+  flex:0 0 clamp(220px, 32vw, 380px); height:100%; overflow-y:auto; overflow-x:hidden;
+  padding:8px 10px; background:var(--panel); border-left:1px solid var(--border);
+  display:flex; flex-direction:column; gap:4px;
+}
+.msg{font-size:13px; line-height:1.5; word-wrap:break-word; overflow-wrap:anywhere}
+.msg .name{font-weight:700; margin-right:4px}
+.msg .emote{height:1.5em; vertical-align:middle; display:inline-block; margin:0 1px}
+.sysmsg{font-size:11px; color:var(--sub); font-style:italic}
+footer{
+  flex:0 0 auto;
+  padding:4px 10px; padding-bottom:calc(4px + env(safe-area-inset-bottom,0px));
+  background:var(--panel2); border-top:1px solid var(--border);
+  font-size:10px; color:var(--sub); text-align:center;
+}
+a{color:var(--accent)}
+
+/* Only stack for genuinely narrow, tall (phone-portrait style) windows —
+   the Thor's bottom screen is squarish but still wider than tall, so it
+   keeps the side-by-side split, which shows far more chat lines. */
+@media (max-width:480px) and (orientation:portrait){
+  main{flex-direction:column}
+  #videoWrap{flex:1 1 55%; width:100%; min-height:0}
+  #chat{flex:1 1 45%; width:100%; max-width:none; border-left:none; border-top:1px solid var(--border)}
+}
+</style>
+</head>
+<body>
+<button id="revealTab" class="ghost-btn">▾ menu</button>
+<header id="header">
+  <span class="brand">ThorStream</span>
+  <button id="signInBtn" class="ghost-btn">Sign in with Twitch</button>
+  <input id="channelInput" type="text" placeholder="twitch channel name" autocapitalize="off" autocorrect="off" spellcheck="false">
+  <button id="connectBtn">Watch</button>
+  <button id="collapseBtn" class="ghost-btn" title="Hide this bar">▴ hide</button>
+  <div id="status">Enter a channel and tap Watch, or sign in to see who's live.</div>
+  <div id="followedBar"></div>
+</header>
+<main>
+  <div id="videoWrap">
+    <div id="videoPlaceholder">Video + chat will load here once connected.<br>(Twitch requires the video player's "parent" domain to match wherever this page is hosted — if the player doesn't load, use the "Open on Twitch" link below and keep this chat window for 7TV emotes.)</div>
+  </div>
+  <div id="chat"></div>
+</main>
+<footer>Chat via Twitch IRC (read-only, no login needed) · Emotes via 7TV + Twitch · <a id="twitchLink" href="#" target="_blank" rel="noopener">Open on Twitch</a></footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const chatEl = $('#chat'), statusEl = $('#status'), input = $('#channelInput'), btn = $('#connectBtn');
+const videoWrap = $('#videoWrap'), twitchLink = $('#twitchLink');
+const headerEl = $('#header'), revealTab = $('#revealTab'), collapseBtn = $('#collapseBtn');
+const signInBtn = $('#signInBtn'), followedBar = $('#followedBar');
+
+let ws = null;
+let emoteMap = new Map();   // name -> img url (7TV, global+channel)
+let currentChannel = '';
+let autoHideTimer = null;
+
+// ---- Header collapse (so video+chat can use the full screen) ----
+function collapseHeader(){
+  headerEl.classList.add('collapsed');
+  revealTab.classList.add('show');
+}
+function expandHeader(temporary){
+  headerEl.classList.remove('collapsed');
+  revealTab.classList.remove('show');
+  clearTimeout(autoHideTimer);
+  if(temporary) autoHideTimer = setTimeout(collapseHeader, 5000);
+}
+collapseBtn.addEventListener('click', () => collapseHeader());
+revealTab.addEventListener('click', () => expandHeader(true));
+
+// ---- Twitch OAuth (Implicit Grant, client-side only — no secret needed) ----
+// You need your OWN free Twitch app: https://dev.twitch.tv/console/apps
+// Set its OAuth Redirect URL to the exact URL this page is hosted at.
+const LS = {
+  clientId: 'tstv_client_id',
+  token: 'tstv_token',
+  login: 'tstv_login',
+  avatar: 'tstv_avatar',
+};
+
+function getClientId(){
+  let id = localStorage.getItem(LS.clientId);
+  if(!id){
+    id = (window.prompt('Paste your Twitch app Client ID (from dev.twitch.tv/console/apps — one-time setup):') || '').trim();
+    if(id) localStorage.setItem(LS.clientId, id);
+  }
+  return id;
+}
+
+function signIn(){
+  const clientId = getClientId();
+  if(!clientId) return;
+  const redirect = window.location.href.split('#')[0];
+  const url = 'https://id.twitch.tv/oauth2/authorize'
+    + '?client_id=' + encodeURIComponent(clientId)
+    + '&redirect_uri=' + encodeURIComponent(redirect)
+    + '&response_type=token'
+    + '&scope=' + encodeURIComponent('user:read:follows');
+  window.location.href = url;
+}
+
+function signOut(){
+  localStorage.removeItem(LS.token);
+  localStorage.removeItem(LS.login);
+  localStorage.removeItem(LS.avatar);
+  followedBar.innerHTML = '';
+  updateSignInButton();
+}
+
+function updateSignInButton(){
+  const login = localStorage.getItem(LS.login);
+  const avatar = localStorage.getItem(LS.avatar);
+  if(login){
+    signInBtn.innerHTML = (avatar ? `<img class="avatar" src="${avatar}">` : '') + login;
+    signInBtn.onclick = () => { if(confirm('Sign out of Twitch?')) signOut(); };
+  } else {
+    signInBtn.textContent = 'Sign in with Twitch';
+    signInBtn.onclick = signIn;
+  }
+}
+
+async function handleOAuthRedirect(){
+  if(!location.hash.includes('access_token')) return;
+  const params = new URLSearchParams(location.hash.slice(1));
+  const token = params.get('access_token');
+  history.replaceState(null, '', location.pathname + location.search);
+  if(!token) return;
+  localStorage.setItem(LS.token, token);
+  try{
+    const clientId = localStorage.getItem(LS.clientId);
+    const me = await fetch('https://api.twitch.tv/helix/users', {
+      headers: { 'Client-Id': clientId, 'Authorization': 'Bearer ' + token }
+    }).then(r=>r.json());
+    const user = me?.data?.[0];
+    if(user){
+      localStorage.setItem(LS.login, user.display_name);
+      localStorage.setItem(LS.avatar, user.profile_image_url);
+    }
+  }catch(e){ console.warn('Twitch user lookup failed', e); }
+  updateSignInButton();
+  loadFollowedLive();
+}
+
+async function loadFollowedLive(){
+  const token = localStorage.getItem(LS.token);
+  const clientId = localStorage.getItem(LS.clientId);
+  if(!token || !clientId) return;
+  try{
+    const me = await fetch('https://api.twitch.tv/helix/users', {
+      headers: { 'Client-Id': clientId, 'Authorization': 'Bearer ' + token }
+    }).then(r=>r.json());
+    const userId = me?.data?.[0]?.id;
+    if(!userId) return;
+    const live = await fetch('https://api.twitch.tv/helix/streams/followed?user_id=' + userId, {
+      headers: { 'Client-Id': clientId, 'Authorization': 'Bearer ' + token }
+    }).then(r=>r.json());
+    renderFollowed(live?.data || []);
+  }catch(e){ console.warn('followed streams fetch failed', e); }
+}
+
+function renderFollowed(streams){
+  followedBar.innerHTML = '';
+  if(!streams.length){
+    if(localStorage.getItem(LS.login)){
+      const d = document.createElement('div');
+      d.style.fontSize = '12px'; d.style.color = 'var(--sub)';
+      d.textContent = 'None of your follows are live right now.';
+      followedBar.appendChild(d);
+    }
+    return;
+  }
+  streams.forEach(s=>{
+    const chip = document.createElement('div');
+    chip.className = 'followed-chip';
+    chip.innerHTML = `<span class="live-dot"></span>${s.user_name} · ${s.viewer_count.toLocaleString()}`;
+    chip.addEventListener('click', () => { input.value = s.user_login; goLive(); });
+    followedBar.appendChild(chip);
+  });
+}
+
+// Note on ads: this app can't selectively "skip" ads — Twitch's ad-free
+// subscriber perk is applied automatically by Twitch's own systems when
+// the browser already has an active twitch.tv login with an eligible sub,
+// since the embedded player shares that twitch.tv session. Signing in here
+// only unlocks your followed/live list — it doesn't change ad delivery.
+
+function setStatus(t){ statusEl.textContent = t; }
+
+function addSystemMsg(t){
+  const d = document.createElement('div');
+  d.className = 'sysmsg';
+  d.textContent = t;
+  chatEl.appendChild(d);
+  trimAndScroll();
+}
+
+function trimAndScroll(){
+  while(chatEl.children.length > 200) chatEl.removeChild(chatEl.firstChild);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+// ---- 7TV emote loading ----
+async function loadSevenTV(channel){
+  emoteMap = new Map();
+  try{
+    const g = await fetch('https://7tv.io/v3/emote-sets/global').then(r=>r.json());
+    (g.emotes||[]).forEach(addSevenTVEmote);
+  }catch(e){ console.warn('7TV global load failed', e); }
+
+  try{
+    const userRes = await fetch('https://api.ivr.fi/v2/twitch/user?login=' + encodeURIComponent(channel)).then(r=>r.json());
+    const twitchId = Array.isArray(userRes) ? userRes[0]?.id : userRes?.id;
+    if(twitchId){
+      const stv = await fetch('https://7tv.io/v3/users/twitch/' + twitchId).then(r=> r.ok ? r.json() : null);
+      const set = stv?.emote_set?.emotes;
+      if(set) set.forEach(addSevenTVEmote);
+    }
+  }catch(e){ console.warn('7TV channel load failed', e); }
+
+  setStatus(`Loaded ${emoteMap.size} 7TV emotes for #${channel}. Connecting to chat…`);
+}
+
+function addSevenTVEmote(e){
+  try{
+    const host = e.data.host;
+    const file = host.files.find(f=>f.name.endsWith('.webp')) || host.files[0];
+    const url = 'https:' + host.url + '/' + file.name;
+    emoteMap.set(e.name, url);
+  }catch(err){}
+}
+
+// ---- Twitch native emote image from id ----
+function twitchEmoteUrl(id){
+  return `https://static-cdn.jtvnw.net/emoticons/v2/${id}/default/dark/2.0`;
+}
+
+// ---- Render a chat message, applying Twitch tag emotes then 7TV word emotes ----
+function renderMessage(text, emotesTag, displayName, color){
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'name';
+  nameEl.textContent = displayName + ':';
+  nameEl.style.color = color || '#9147ff';
+  wrap.appendChild(nameEl);
+
+  // Build list of {start,end,id} from Twitch emotes tag: id:s-e,s-e/id2:s-e
+  let ranges = [];
+  if(emotesTag){
+    emotesTag.split('/').forEach(part=>{
+      const [id, positions] = part.split(':');
+      if(!positions) return;
+      positions.split(',').forEach(p=>{
+        const [s,e] = p.split('-').map(Number);
+        ranges.push({start:s, end:e, id});
+      });
+    });
+  }
+  ranges.sort((a,b)=>a.start-b.start);
+
+  const chars = Array.from(text); // codepoint-aware
+  let cursor = 0;
+  const frag = document.createDocumentFragment();
+
+  function pushText(str){
+    // 7TV word-level replacement on plain text segments
+    const words = str.split(/(\s+)/);
+    words.forEach(w=>{
+      if(emoteMap.has(w)){
+        const img = document.createElement('img');
+        img.className = 'emote';
+        img.src = emoteMap.get(w);
+        img.alt = w;
+        img.title = w;
+        frag.appendChild(img);
+      } else if(w.length){
+        frag.appendChild(document.createTextNode(w));
+      }
+    });
+  }
+
+  ranges.forEach(r=>{
+    if(r.start > cursor) pushText(chars.slice(cursor, r.start).join(''));
+    const img = document.createElement('img');
+    img.className = 'emote';
+    img.src = twitchEmoteUrl(r.id);
+    img.alt = chars.slice(r.start, r.end+1).join('');
+    frag.appendChild(img);
+    cursor = r.end + 1;
+  });
+  if(cursor < chars.length) pushText(chars.slice(cursor).join(''));
+
+  frag.insertBefore(document.createTextNode(' '), frag.firstChild);
+  wrap.appendChild(frag);
+  chatEl.appendChild(wrap);
+  trimAndScroll();
+}
+
+// ---- IRC ----
+function parseTags(tagStr){
+  const tags = {};
+  tagStr.split(';').forEach(kv=>{
+    const idx = kv.indexOf('=');
+    if(idx === -1) return;
+    tags[kv.slice(0,idx)] = kv.slice(idx+1);
+  });
+  return tags;
+}
+
+function connectIRC(channel){
+  if(ws){ try{ ws.close(); }catch(e){} }
+  ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+
+  ws.onopen = () => {
+    ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+    ws.send('PASS SCHMOOPIIE');
+    ws.send('NICK justinfan' + Math.floor(10000 + Math.random()*89999));
+    ws.send('JOIN #' + channel);
+    setStatus('Connected to #' + channel + ' chat.');
+  };
+
+  ws.onmessage = ev => {
+    ev.data.split('\r\n').forEach(line=>{
+      if(!line) return;
+      if(line.startsWith('PING')){ ws.send('PONG :tmi.twitch.tv'); return; }
+
+      let tags = {};
+      let rest = line;
+      if(line.startsWith('@')){
+        const sp = line.indexOf(' ');
+        tags = parseTags(line.slice(1, sp));
+        rest = line.slice(sp+1);
+      }
+      if(rest.includes('PRIVMSG')){
+        const m = rest.match(/:(\S+)!\S+ PRIVMSG #\S+ :(.*)$/);
+        if(m){
+          const displayName = tags['display-name'] || m[1];
+          const color = tags['color'];
+          renderMessage(m[2], tags['emotes'], displayName, color);
+        }
+      }
+    });
+  };
+
+  ws.onerror = () => setStatus('Chat connection error.');
+  ws.onclose = () => setStatus('Chat disconnected.');
+}
+
+// ---- Video (Twitch embed, parent = actual hosting domain) ----
+function loadVideo(channel){
+  videoWrap.innerHTML = '';
+  const iframe = document.createElement('iframe');
+  const parent = window.location.hostname || 'localhost';
+  iframe.src = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${parent}&muted=true`;
+  iframe.allowFullscreen = true;
+  videoWrap.appendChild(iframe);
+}
+
+async function goLive(){
+  const channel = input.value.trim().toLowerCase().replace(/^#/, '');
+  if(!channel) return;
+  currentChannel = channel;
+  btn.disabled = true;
+  chatEl.innerHTML = '';
+  twitchLink.href = 'https://twitch.tv/' + channel;
+  setStatus('Loading 7TV emotes for #' + channel + '…');
+  loadVideo(channel);
+  await loadSevenTV(channel);
+  connectIRC(channel);
+  addSystemMsg(`Joined #${channel}. ${emoteMap.size} 7TV emotes active.`);
+  btn.disabled = false;
+  expandHeader(true); // briefly confirm, then auto-hide so video+chat get full screen
+}
+
+btn.addEventListener('click', goLive);
+input.addEventListener('keydown', e => { if(e.key === 'Enter') goLive(); });
+
+updateSignInButton();
+handleOAuthRedirect();
+if(localStorage.getItem(LS.token)) loadFollowedLive();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(()=>{ /* fine over file:// or unsupported contexts */ });
+  });
+}
+</script>
+</body>
+</html>
