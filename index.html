@@ -67,6 +67,25 @@ header .brand{font-weight:800; color:var(--accent); margin-right:4px; white-spac
 }
 .followed-chip img{width:22px; height:22px; border-radius:50%}
 .followed-chip .live-dot{width:7px; height:7px; border-radius:50%; background:#eb0400; margin-right:2px}
+
+/* One-time setup modal (replaces the native browser prompt) */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50;
+  display:flex; align-items:center; justify-content:center; padding:20px;
+}
+.modal-overlay.hidden{display:none}
+.modal-box{
+  background:var(--panel); border:1px solid var(--border); border-radius:14px;
+  max-width:380px; width:100%; padding:20px; box-shadow:0 10px 40px rgba(0,0,0,.4);
+}
+.modal-box h2{margin:0 0 8px; font-size:17px}
+.modal-box p{margin:0 0 14px; font-size:13px; color:var(--sub); line-height:1.5}
+.modal-box input{
+  width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text);
+  border-radius:8px; padding:10px; font-size:14px; margin-bottom:12px;
+}
+.modal-box .modal-actions{display:flex; gap:8px; justify-content:flex-end}
+.modal-box a{font-size:12px}
 input[type=text]{
   flex:1; min-width:120px; background:var(--panel2); border:1px solid var(--border);
   color:var(--text); border-radius:8px; padding:8px 10px; font-size:14px;
@@ -100,12 +119,6 @@ main{
 .msg .name{font-weight:700; margin-right:4px}
 .msg .emote{height:1.5em; vertical-align:middle; display:inline-block; margin:0 1px}
 .sysmsg{font-size:11px; color:var(--sub); font-style:italic}
-footer{
-  flex:0 0 auto;
-  padding:4px 10px; padding-bottom:calc(4px + env(safe-area-inset-bottom,0px));
-  background:var(--panel2); border-top:1px solid var(--border);
-  font-size:10px; color:var(--sub); text-align:center;
-}
 a{color:var(--accent)}
 
 /* Only stack for genuinely narrow, tall (phone-portrait style) windows —
@@ -129,20 +142,32 @@ a{color:var(--accent)}
   <div id="status">Enter a channel and tap Watch, or sign in to see who's live.</div>
   <div id="followedBar"></div>
 </header>
+<div id="clientIdModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2>One-time app setup</h2>
+    <p>This only happens once on this device. ThorStream needs a Twitch app ID to connect — <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">create one free here</a> (Redirect URL: match this app's URL), then paste the Client ID below. After this, signing in always goes straight to Twitch's own login screen.</p>
+    <input id="clientIdInput" type="text" placeholder="Twitch app Client ID" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="modal-actions">
+      <button id="clientIdCancel" class="ghost-btn">Cancel</button>
+      <button id="clientIdSave">Continue</button>
+    </div>
+  </div>
+</div>
 <main>
   <div id="videoWrap">
     <div id="videoPlaceholder">Video + chat will load here once connected.<br>(Twitch requires the video player's "parent" domain to match wherever this page is hosted — if the player doesn't load, use the "Open on Twitch" link below and keep this chat window for 7TV emotes.)</div>
   </div>
   <div id="chat"></div>
 </main>
-<footer>Chat via Twitch IRC (read-only, no login needed) · Emotes via 7TV + Twitch · <a id="twitchLink" href="#" target="_blank" rel="noopener">Open on Twitch</a></footer>
 
 <script>
 const $ = s => document.querySelector(s);
 const chatEl = $('#chat'), statusEl = $('#status'), input = $('#channelInput'), btn = $('#connectBtn');
-const videoWrap = $('#videoWrap'), twitchLink = $('#twitchLink');
+const videoWrap = $('#videoWrap');
 const headerEl = $('#header'), revealTab = $('#revealTab'), collapseBtn = $('#collapseBtn');
 const signInBtn = $('#signInBtn'), followedBar = $('#followedBar');
+const clientIdModal = $('#clientIdModal'), clientIdInput = $('#clientIdInput');
+const clientIdSave = $('#clientIdSave'), clientIdCancel = $('#clientIdCancel');
 
 let ws = null;
 let emoteMap = new Map();   // name -> img url (7TV, global+channel)
@@ -174,24 +199,44 @@ const LS = {
 };
 
 function getClientId(){
-  let id = localStorage.getItem(LS.clientId);
-  if(!id){
-    id = (window.prompt('Paste your Twitch app Client ID (from dev.twitch.tv/console/apps — one-time setup):') || '').trim();
-    if(id) localStorage.setItem(LS.clientId, id);
-  }
-  return id;
+  const existing = localStorage.getItem(LS.clientId);
+  if(existing) return Promise.resolve(existing);
+
+  return new Promise(resolve => {
+    clientIdInput.value = '';
+    clientIdModal.classList.remove('hidden');
+    clientIdInput.focus();
+
+    function cleanup(result){
+      clientIdModal.classList.add('hidden');
+      clientIdSave.removeEventListener('click', onSave);
+      clientIdCancel.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onSave(){
+      const id = clientIdInput.value.trim();
+      if(!id) return;
+      localStorage.setItem(LS.clientId, id);
+      cleanup(id);
+    }
+    function onCancel(){ cleanup(null); }
+
+    clientIdSave.addEventListener('click', onSave);
+    clientIdCancel.addEventListener('click', onCancel);
+    clientIdInput.addEventListener('keydown', e => { if(e.key === 'Enter') onSave(); });
+  });
 }
 
-function signIn(){
-  const clientId = getClientId();
-  if(!clientId) return;
+async function signIn(){
+  const clientId = await getClientId();
+  if(!clientId) return; // one-time setup was cancelled
   const redirect = window.location.href.split('#')[0];
   const url = 'https://id.twitch.tv/oauth2/authorize'
     + '?client_id=' + encodeURIComponent(clientId)
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
     + '&scope=' + encodeURIComponent('user:read:follows');
-  window.location.href = url;
+  window.location.href = url; // straight to Twitch's own login screen
 }
 
 function signOut(){
@@ -458,7 +503,6 @@ async function goLive(){
   currentChannel = channel;
   btn.disabled = true;
   chatEl.innerHTML = '';
-  twitchLink.href = 'https://twitch.tv/' + channel;
   setStatus('Loading 7TV emotes for #' + channel + '…');
   loadVideo(channel);
   await loadSevenTV(channel);
