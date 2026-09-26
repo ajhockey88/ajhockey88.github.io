@@ -296,7 +296,7 @@ async function handleOAuthRedirect(){
     returnLink.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;'
       + 'background:#0e0e10;color:#efeff1;font-size:18px;z-index:999;text-decoration:none;';
     document.body.appendChild(returnLink);
-    setTimeout(() => { window.location.href = returnIntent; }, 400); // auto-attempt
+    setTimeout(() => { window.location.href = returnIntent; }, 20000); // TEMP: extended for debugging — normally 400
   }
 }
 
