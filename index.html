@@ -236,7 +236,11 @@ async function signIn(){
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
     + '&scope=' + encodeURIComponent('user:read:follows');
-  window.location.href = url; // straight to Twitch's own login screen
+  // Open in its own tab rather than replacing this page — navigating this
+  // app's own window to a different site leaves it stranded mid-navigation
+  // once Android hands the cross-site request off to a browser tab.
+  window.open(url, '_blank');
+  setStatus('Finished signing in? Just switch back here — it picks it up automatically.');
 }
 
 function signOut(){
@@ -518,6 +522,20 @@ input.addEventListener('keydown', e => { if(e.key === 'Enter') goLive(); });
 updateSignInButton();
 handleOAuthRedirect();
 if(localStorage.getItem(LS.token)) loadFollowedLive();
+
+// The Twitch sign-in tab is a separate window from this app (see signIn()) —
+// it saves the token to shared localStorage itself. When you switch back
+// here, just re-read that instead of waiting for a redirect that never
+// lands in this particular window.
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && localStorage.getItem(LS.token)){
+    updateSignInButton();
+    loadFollowedLive();
+  }
+});
+window.addEventListener('focus', () => {
+  if(localStorage.getItem(LS.token)){ updateSignInButton(); loadFollowedLive(); }
+});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
