@@ -145,7 +145,7 @@ a{color:var(--accent)}
 <div id="clientIdModal" class="modal-overlay hidden">
   <div class="modal-box">
     <h2>One-time app setup</h2>
-    <p>This only happens once on this device. ThorStream needs a Twitch app ID to connect — <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">create one free here</a> (Redirect URL: match this app's URL), then paste the Client ID below. After this, signing in always goes straight to Twitch's own login screen.</p>
+    <p>This only happens once on this device. ThorStream needs a Twitch app ID to connect — <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">create one free here</a> (Redirect URL: this app's URL), then paste the Client ID below.</p>
     <input id="clientIdInput" type="text" placeholder="Twitch app Client ID" autocapitalize="off" autocorrect="off" spellcheck="false">
     <div class="modal-actions">
       <button id="clientIdCancel" class="ghost-btn">Cancel</button>
@@ -155,7 +155,7 @@ a{color:var(--accent)}
 </div>
 <main>
   <div id="videoWrap">
-    <div id="videoPlaceholder">Video + chat will load here once connected.<br>(Twitch requires the video player's "parent" domain to match wherever this page is hosted — if the player doesn't load, use the "Open on Twitch" link below and keep this chat window for 7TV emotes.)</div>
+    <div id="videoPlaceholder">Video + chat will load here once connected.</div>
   </div>
   <div id="chat"></div>
 </main>
@@ -189,8 +189,6 @@ collapseBtn.addEventListener('click', () => collapseHeader());
 revealTab.addEventListener('click', () => expandHeader(true));
 
 // ---- Twitch OAuth (Implicit Grant, client-side only — no secret needed) ----
-// You need your OWN free Twitch app: https://dev.twitch.tv/console/apps
-// Set its OAuth Redirect URL to the exact URL this page is hosted at.
 const LS = {
   clientId: 'tstv_client_id',
   token: 'tstv_token',
@@ -201,12 +199,10 @@ const LS = {
 function getClientId(){
   const existing = localStorage.getItem(LS.clientId);
   if(existing) return Promise.resolve(existing);
-
   return new Promise(resolve => {
     clientIdInput.value = '';
     clientIdModal.classList.remove('hidden');
     clientIdInput.focus();
-
     function cleanup(result){
       clientIdModal.classList.add('hidden');
       clientIdSave.removeEventListener('click', onSave);
@@ -220,7 +216,6 @@ function getClientId(){
       cleanup(id);
     }
     function onCancel(){ cleanup(null); }
-
     clientIdSave.addEventListener('click', onSave);
     clientIdCancel.addEventListener('click', onCancel);
     clientIdInput.addEventListener('keydown', e => { if(e.key === 'Enter') onSave(); });
@@ -229,18 +224,18 @@ function getClientId(){
 
 async function signIn(){
   const clientId = await getClientId();
-  if(!clientId) return; // one-time setup was cancelled
+  if(!clientId) return;
   const redirect = window.location.href.split('#')[0];
   const url = 'https://id.twitch.tv/oauth2/authorize'
     + '?client_id=' + encodeURIComponent(clientId)
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
     + '&scope=' + encodeURIComponent('user:read:follows');
-  // Open in its own tab rather than replacing this page — navigating this
-  // app's own window to a different site leaves it stranded mid-navigation
-  // once Android hands the cross-site request off to a browser tab.
+  // Open in its own tab — navigating this app's own window away to a
+  // different site leaves it stranded once Android hands the cross-site
+  // request off to a browser tab.
   window.open(url, '_blank');
-  setStatus('Finished signing in? Just switch back here — it picks it up automatically.');
+  setStatus('Finished signing in on the Twitch tab? Just switch back here.');
 }
 
 function signOut(){
@@ -321,12 +316,6 @@ function renderFollowed(streams){
     followedBar.appendChild(chip);
   });
 }
-
-// Note on ads: this app can't selectively "skip" ads — Twitch's ad-free
-// subscriber perk is applied automatically by Twitch's own systems when
-// the browser already has an active twitch.tv login with an eligible sub,
-// since the embedded player shares that twitch.tv session. Signing in here
-// only unlocks your followed/live list — it doesn't change ad delivery.
 
 function setStatus(t){ statusEl.textContent = t; }
 
