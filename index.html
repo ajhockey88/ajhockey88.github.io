@@ -224,7 +224,9 @@ function getClientId(){
 }
 
 async function signIn(){
+  console.log('[ThorStream] Sign In tapped');
   const clientId = await getClientId();
+  console.log('[ThorStream] clientId:', clientId ? '(present, ' + clientId.length + ' chars)' : '(none — setup cancelled)');
   if(!clientId) return;
   const redirect = window.location.href.split('#')[0];
   const url = 'https://id.twitch.tv/oauth2/authorize'
@@ -232,14 +234,9 @@ async function signIn(){
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
     + '&scope=' + encodeURIComponent('user:read:follows');
-
-  // Explicitly hand this off to Chrome by package name via an Android
-  // intent:// URL, instead of navigating within the TWA's own session.
-  // This forces a genuine standalone Chrome launch rather than whatever
-  // ambiguous in-app handling was causing the flash-and-return.
-  const intentUrl = 'intent://' + url.replace(/^https?:\/\//, '')
-    + '#Intent;scheme=https;package=com.android.chrome;end';
-  window.location.href = intentUrl;
+  console.log('[ThorStream] navigating to:', url);
+  window.location.href = url;
+  console.log('[ThorStream] navigation call completed (if you see this, the redirect did not immediately happen)');
 }
 
 function signOut(){
