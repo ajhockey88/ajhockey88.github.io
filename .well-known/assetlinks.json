@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "io.github.ajhockey88.twa",
-        "sha256_cert_fingerprints": ["47:7A:17:D0:8B:8F:2B:E3:03:8A:D4:11:55:55:3B:13:F3:14:D0:44:86:02:19:24:6B:96:0C:BD:AD:4F:EA:5F"]
+        "sha256_cert_fingerprints": ["A2:1D:46:35:38:A3:48:CC:B7:8F:06:D8:DD:79:D5:0C:00:D2:18:DC:E9:62:F5:47:AC:3B:01:87:32:EB:74:C0"]
       }
     }]
