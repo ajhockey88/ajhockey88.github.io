@@ -194,6 +194,7 @@ const LS = {
   token: 'tstv_token',
   login: 'tstv_login',
   avatar: 'tstv_avatar',
+  pendingRefresh: 'tstv_pending_refresh',
 };
 
 function getClientId(){
@@ -289,6 +290,7 @@ async function handleOAuthRedirect(){
   const inInstalledApp = window.matchMedia('(display-mode: standalone)').matches
     || window.matchMedia('(display-mode: fullscreen)').matches;
   if(!inInstalledApp && token){
+    localStorage.setItem(LS.pendingRefresh, '1'); // tell the app instance to hard-reload on next focus
     const returnIntent = 'intent:#Intent;package=io.github.ajhockey88.twa;'
       + 'action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end';
     const returnLink = document.createElement('a');
@@ -538,12 +540,22 @@ if(localStorage.getItem(LS.token)) loadFollowedLive();
 // here, just re-read that instead of waiting for a redirect that never
 // lands in this particular window.
 document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && localStorage.getItem(LS.pendingRefresh)){
+    localStorage.removeItem(LS.pendingRefresh);
+    location.reload();
+    return;
+  }
   if(document.visibilityState === 'visible' && localStorage.getItem(LS.token)){
     updateSignInButton();
     loadFollowedLive();
   }
 });
 window.addEventListener('focus', () => {
+  if(localStorage.getItem(LS.pendingRefresh)){
+    localStorage.removeItem(LS.pendingRefresh);
+    location.reload();
+    return;
+  }
   if(localStorage.getItem(LS.token)){ updateSignInButton(); loadFollowedLive(); }
 });
 // Covers the case where Android hands the OAuth redirect back to this exact
