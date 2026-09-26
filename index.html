@@ -228,7 +228,7 @@ async function signIn(){
   const clientId = await getClientId();
   console.log('[ThorStream] clientId:', clientId ? '(present, ' + clientId.length + ' chars)' : '(none — setup cancelled)');
   if(!clientId) return;
-  const redirect = window.location.href.split('#')[0];
+  const redirect = window.location.origin + window.location.pathname; // clean URL, ignores any leftover ?query junk
   const url = 'https://id.twitch.tv/oauth2/authorize'
     + '?client_id=' + encodeURIComponent(clientId)
     + '&redirect_uri=' + encodeURIComponent(redirect)
@@ -527,6 +527,8 @@ async function goLive(){
 
 btn.addEventListener('click', goLive);
 input.addEventListener('keydown', e => { if(e.key === 'Enter') goLive(); });
+
+if(location.search.includes('error=')) history.replaceState(null, '', location.pathname); // clear stale error params
 
 updateSignInButton();
 handleOAuthRedirect();
