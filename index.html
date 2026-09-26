@@ -231,10 +231,14 @@ async function signIn(){
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
     + '&scope=' + encodeURIComponent('user:read:follows');
-  // With Digital Asset Links verified, Android routes the redirect back to
-  // this exact app rather than stranding it in a browser tab — a direct
-  // navigation lets that round-trip work as intended.
-  window.location.href = url;
+
+  // Explicitly hand this off to Chrome by package name via an Android
+  // intent:// URL, instead of navigating within the TWA's own session.
+  // This forces a genuine standalone Chrome launch rather than whatever
+  // ambiguous in-app handling was causing the flash-and-return.
+  const intentUrl = 'intent://' + url.replace(/^https?:\/\//, '')
+    + '#Intent;scheme=https;package=com.android.chrome;end';
+  window.location.href = intentUrl;
 }
 
 function signOut(){
@@ -277,6 +281,24 @@ async function handleOAuthRedirect(){
   }catch(e){ console.warn('Twitch user lookup failed', e); }
   updateSignInButton();
   loadFollowedLive();
+
+  // If this page loaded in a plain browser tab (not the installed app
+  // itself — display-mode tells us which), automatically hand control
+  // back to the installed app now that sign-in is done, since localStorage
+  // is already shared and the app just needs to be brought to front.
+  const inInstalledApp = window.matchMedia('(display-mode: standalone)').matches
+    || window.matchMedia('(display-mode: fullscreen)').matches;
+  if(!inInstalledApp && token){
+    const returnIntent = 'intent:#Intent;package=io.github.ajhockey88.twa;'
+      + 'action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;end';
+    const returnLink = document.createElement('a');
+    returnLink.href = returnIntent;
+    returnLink.textContent = 'Signed in! Tap here to return to ThorStream';
+    returnLink.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;'
+      + 'background:#0e0e10;color:#efeff1;font-size:18px;z-index:999;text-decoration:none;';
+    document.body.appendChild(returnLink);
+    setTimeout(() => { window.location.href = returnIntent; }, 400); // auto-attempt
+  }
 }
 
 async function loadFollowedLive(){
