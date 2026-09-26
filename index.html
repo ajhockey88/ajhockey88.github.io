@@ -542,8 +542,7 @@ if(localStorage.getItem(LS.token)) loadFollowedLive();
 document.addEventListener('visibilitychange', () => {
   if(document.visibilityState === 'visible' && localStorage.getItem(LS.pendingRefresh)){
     localStorage.removeItem(LS.pendingRefresh);
-    location.reload();
-    return;
+    if(!localStorage.getItem(LS.login)){ location.reload(); return; }
   }
   if(document.visibilityState === 'visible' && localStorage.getItem(LS.token)){
     updateSignInButton();
@@ -553,8 +552,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', () => {
   if(localStorage.getItem(LS.pendingRefresh)){
     localStorage.removeItem(LS.pendingRefresh);
-    location.reload();
-    return;
+    if(!localStorage.getItem(LS.login)){ location.reload(); return; }
   }
   if(localStorage.getItem(LS.token)){ updateSignInButton(); loadFollowedLive(); }
 });
@@ -562,6 +560,17 @@ window.addEventListener('focus', () => {
 // already-running app instance without a full page reload — only the hash
 // changes, so a plain page-load listener alone would miss it.
 window.addEventListener('hashchange', () => { handleOAuthRedirect(); });
+
+// Belt-and-suspenders: don't rely solely on focus/visibilitychange firing
+// when Android resumes this app after the Chrome sign-in hand-off — some
+// resume paths don't reliably trigger those events in this context. Poll
+// for the flag instead, so the reload happens regardless.
+setInterval(() => {
+  if(localStorage.getItem(LS.pendingRefresh)){
+    localStorage.removeItem(LS.pendingRefresh);
+    if(!localStorage.getItem(LS.login)) location.reload(); // only reload if not already signed in
+  }
+}, 1200);
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
