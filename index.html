@@ -228,7 +228,7 @@ async function signIn(){
     + '?client_id=' + encodeURIComponent(TWITCH_CLIENT_ID)
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
-    + '&scope=' + encodeURIComponent('user:read:follows chat:edit');
+    + '&scope=' + encodeURIComponent('user:read:follows chat:read chat:edit');
   window.location.href = url;
 }
 
