@@ -305,7 +305,7 @@ function addSystemMsg(t){
 }
 
 function trimAndScroll(){
-  while(chatEl.children.length > 75){
+  while(chatEl.children.length > 30){
     const oldest = chatEl.firstChild;
     oldest.querySelectorAll && oldest.querySelectorAll('.emote').forEach(img => emoteObserver.unobserve(img));
     chatEl.removeChild(oldest);
@@ -624,7 +624,7 @@ const pendingRefreshPoll = setInterval(() => {
     if(!localStorage.getItem(LS.login)) location.reload(); // only reload if not already signed in
   }
 }, 1200);
-setTimeout(() => clearInterval(pendingRefreshPoll), 5 * 60 * 1000); // only useful briefly after Sign In — no need to keep waking up forever
+setTimeout(() => clearInterval(pendingRefreshPoll), 2 * 60 * 1000); // only useful briefly after Sign In — no need to keep waking up forever
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
