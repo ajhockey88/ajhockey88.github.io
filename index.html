@@ -50,7 +50,8 @@ header.collapsed{
 }
 #revealTab{
   position:fixed; top:calc(env(safe-area-inset-top,0px) + 6px); right:10px; z-index:20;
-  padding:4px 10px; font-size:11px; border-radius:20px; opacity:.55; display:none;
+  padding:4px 10px; font-size:11px; border-radius:20px; opacity:.75; display:none;
+  color:#fff; border-color:rgba(255,255,255,.5); background:rgba(0,0,0,.4);
 }
 #revealTab.show{display:block}
 header .brand{font-weight:800; color:var(--accent); margin-right:4px; white-space:nowrap}
@@ -78,12 +79,16 @@ button:active{background:var(--accent2)}
 button:disabled{opacity:.5}
 #status{font-size:11px; color:var(--sub); width:100%; order:99}
 
-/* Fill all remaining vertical space, stream left / chat right, no page scroll */
+/* Fill all remaining vertical space. Video ALWAYS fills the full area as a
+   base layer that never changes size — chat floats on top as an overlay.
+   This matters: resizing the video element (which used to happen when chat
+   was hidden/shown via flex) was interrupting Twitch's player. Keeping its
+   box permanently fixed avoids that entirely. */
 main{
-  flex:1; min-height:0; display:flex; flex-direction:row;
+  flex:1; min-height:0; position:relative;
 }
 #videoWrap{
-  position:relative; flex:1 1 auto; min-width:0; height:100%; background:#000;
+  position:absolute; inset:0; background:#000;
 }
 #videoWrap iframe{position:absolute; inset:0; width:100%; height:100%; border:0; display:block}
 #videoPlaceholder{
@@ -91,7 +96,8 @@ main{
   color:var(--sub); font-size:13px; text-align:center; padding:16px;
 }
 #chat{
-  flex:0 0 clamp(220px, 32vw, 380px); height:100%; overflow-y:auto; overflow-x:hidden;
+  position:absolute; top:0; right:0; bottom:0;
+  width:clamp(220px, 32vw, 380px); overflow-y:auto; overflow-x:hidden;
   padding:8px 10px; background:#000; color:#fff; border-left:1px solid var(--border);
   display:flex; flex-direction:column; gap:4px;
 }
@@ -102,20 +108,17 @@ main{
 a{color:var(--accent)}
 
 /* Dual-screen mode: this window shows ONLY the pane matching whichever
-   physical screen it's currently on, full-bleed. Applied by JS after
-   detecting the screen's aspect ratio (see detectScreenRole()). */
+   physical screen it's currently on, full-bleed. Video's box never changes
+   size either way — only chat's overlay visibility/size changes. */
 body.role-video #chat{display:none}
-body.role-video #videoWrap{flex:1 1 100%}
 body.role-chat #videoWrap{display:none}
-body.role-chat #chat{flex:1 1 100%; max-width:none}
+body.role-chat #chat{left:0; width:auto}
 
 /* Only stack for genuinely narrow, tall (phone-portrait style) windows —
    the Thor's bottom screen is squarish but still wider than tall, so it
    keeps the side-by-side split, which shows far more chat lines. */
 @media (max-width:480px) and (orientation:portrait){
-  main{flex-direction:column}
-  #videoWrap{flex:1 1 55%; width:100%; min-height:0}
-  #chat{flex:1 1 45%; width:100%; max-width:none; border-left:none; border-top:1px solid var(--border)}
+  #chat{top:55%; left:0; right:0; bottom:0; width:auto; border-left:none; border-top:1px solid var(--border)}
 }
 </style>
 </head>
