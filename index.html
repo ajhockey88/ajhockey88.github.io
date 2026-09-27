@@ -30,6 +30,7 @@
   --sub:#adadb8; --border:#2d2d33;
 }
 *{box-sizing:border-box}
+html{background:#000}
 html,body{height:100%;margin:0;overflow:hidden}
 body{
   background:var(--bg); color:var(--text);
@@ -502,7 +503,6 @@ async function toggleDualScreen(){
     // and tell native code to dismiss the second-screen chat window.
     document.body.classList.remove('role-video', 'role-chat');
     localStorage.removeItem(LS.dualChannel);
-    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
     triggerNative('dual-screen-off');
     setStatus('Dual-screen mode off.');
     return;
@@ -513,7 +513,6 @@ async function toggleDualScreen(){
     return;
   }
   localStorage.setItem(LS.dualChannel, currentChannel);
-  try{ await document.documentElement.requestFullscreen(); }catch(e){ /* fine if unsupported/blocked */ }
   applyDualScreenLayout();
   collapseHeader();
   triggerNative('dual-screen-on', currentChannel);
