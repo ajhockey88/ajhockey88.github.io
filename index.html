@@ -112,6 +112,7 @@ a{color:var(--accent)}
 /* Dual-screen mode: chat hides, and video is visually stretched (via a JS-
    applied transform, not a resize) to fill the freed space full-bleed. */
 body.role-video #chat{display:none}
+body.role-video #videoWrap{right:0}
 body.role-chat #videoWrap{display:none}
 body.role-chat #chat{left:0; width:auto}
 body.role-chat #revealTab{display:none !important}
@@ -499,16 +500,6 @@ function applyDualScreenLayout(){
   const role = detectScreenRole();
   document.body.classList.remove('role-video', 'role-chat');
   document.body.classList.add(role === 'video' ? 'role-video' : 'role-chat');
-
-  // Stretch video to fill the screen via a CSS transform (pure compositing)
-  // instead of actually resizing it — resizing the real element is what was
-  // interrupting Twitch's player before.
-  if(role === 'video'){
-    const scale = window.innerWidth / videoWrap.getBoundingClientRect().width;
-    videoWrap.style.transform = `scaleX(${scale})`;
-  } else {
-    videoWrap.style.transform = '';
-  }
 }
 
 async function toggleDualScreen(){
@@ -518,10 +509,10 @@ async function toggleDualScreen(){
     // Turn off — restore the normal single-window side-by-side view,
     // and tell native code to dismiss the second-screen chat window.
     document.body.classList.remove('role-video', 'role-chat');
-    videoWrap.style.transform = ''; // reset the zoom applied for full-bleed video — leaving this on was cropping the normal view
     localStorage.removeItem(LS.dualChannel);
     triggerNative('dual-screen-off');
     setStatus('Dual-screen mode off.');
+    if(currentChannel) loadVideo(currentChannel); // re-fit video cleanly to the normal (narrower) shape
     return;
   }
 
@@ -532,6 +523,7 @@ async function toggleDualScreen(){
   localStorage.setItem(LS.dualChannel, currentChannel);
   applyDualScreenLayout();
   collapseHeader();
+  loadVideo(currentChannel); // re-fit video cleanly to the new full-width shape — no letterboxing
   triggerNative('dual-screen-on', currentChannel);
   setStatus('Dual-screen mode on — chat should appear on the other screen automatically. Tap Dual Screen again to turn it off.');
 }
