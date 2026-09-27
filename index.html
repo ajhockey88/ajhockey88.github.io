@@ -54,6 +54,27 @@ header.collapsed{
   color:#fff; border-color:rgba(255,255,255,.5); background:rgba(0,0,0,.4);
 }
 #revealTab.show{display:block}
+
+#chatSendBtn{
+  position:absolute; right:16px; bottom:16px; z-index:15;
+  width:44px; height:44px; border-radius:50%; padding:0;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--accent); color:#fff; border:none;
+  box-shadow:0 2px 10px rgba(0,0,0,.4);
+}
+#chatSendBtn:active{background:var(--accent2)}
+body.role-video #chatSendBtn, body.role-video #chatSendBar{display:none}
+
+#chatSendBar{
+  position:absolute; right:16px; bottom:16px; left:16px; z-index:16;
+  display:flex; gap:8px;
+}
+#chatSendBar.hidden{display:none}
+#chatSendInput{
+  flex:1; background:var(--panel2); border:1px solid var(--border); color:var(--text);
+  border-radius:20px; padding:10px 14px; font-size:14px;
+}
+#chatSendSubmit{border-radius:20px}
 header .brand{font-weight:800; color:var(--accent); margin-right:4px; white-space:nowrap}
 .ghost-btn{
   background:transparent; border:1px solid var(--border); color:var(--text);
@@ -146,6 +167,15 @@ body.role-chat header{display:none !important}
     <div id="videoPlaceholder">Video + chat will load here once connected.</div>
   </div>
   <div id="chat"></div>
+  <button id="chatSendBtn" title="Send a message">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 3L18 10L2 17L5 10L2 3Z" fill="currentColor"/>
+    </svg>
+  </button>
+  <div id="chatSendBar" class="hidden">
+    <input id="chatSendInput" type="text" placeholder="Send a message" autocomplete="off" autocapitalize="sentences">
+    <button id="chatSendSubmit">Send</button>
+  </div>
 </main>
 
 <script>
@@ -154,6 +184,8 @@ const chatEl = $('#chat'), statusEl = $('#status');
 const videoWrap = $('#videoWrap');
 const headerEl = $('#header'), revealTab = $('#revealTab'), collapseBtn = $('#collapseBtn');
 const signInBtn = $('#signInBtn'), followedBar = $('#followedBar'), dualScreenBtn = $('#dualScreenBtn');
+const chatSendBtn = $('#chatSendBtn'), chatSendBar = $('#chatSendBar');
+const chatSendInput = $('#chatSendInput'), chatSendSubmit = $('#chatSendSubmit');
 
 let ws = null;
 let emoteMap = new Map();   // name -> img url (7TV, global+channel)
@@ -194,7 +226,7 @@ async function signIn(){
     + '?client_id=' + encodeURIComponent(TWITCH_CLIENT_ID)
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
-    + '&scope=' + encodeURIComponent('user:read:follows');
+    + '&scope=' + encodeURIComponent('user:read:follows chat:edit');
   window.location.href = url;
 }
 
@@ -445,10 +477,18 @@ function connectIRC(channel){
   if(ws){ try{ ws.close(); }catch(e){} }
   ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
+  const token = localStorage.getItem(LS.token);
+  const login = localStorage.getItem(LS.login);
+
   ws.onopen = () => {
     ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
-    ws.send('PASS SCHMOOPIIE');
-    ws.send('NICK justinfan' + Math.floor(10000 + Math.random()*89999));
+    if(token && login){
+      ws.send('PASS oauth:' + token);
+      ws.send('NICK ' + login.toLowerCase());
+    } else {
+      ws.send('PASS SCHMOOPIIE');
+      ws.send('NICK justinfan' + Math.floor(10000 + Math.random()*89999));
+    }
     ws.send('JOIN #' + channel);
     setStatus('Connected to #' + channel + ' chat.');
   };
@@ -473,6 +513,9 @@ function connectIRC(channel){
           renderMessage(m[2], tags['emotes'], displayName, color);
         }
       }
+      if(rest.includes('NOTICE') && rest.toLowerCase().includes('login authentication failed')){
+        setStatus('Sign-in needs to be refreshed to send messages — sign out and sign in again.');
+      }
     });
   };
 
@@ -480,12 +523,23 @@ function connectIRC(channel){
   ws.onclose = () => setStatus('Chat disconnected.');
 }
 
+function sendChatMessage(text){
+  text = (text || '').trim();
+  if(!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if(!localStorage.getItem(LS.token)){
+    setStatus('Sign in with Twitch to send messages.');
+    return;
+  }
+  ws.send('PRIVMSG #' + currentChannel + ' :' + text);
+}
+
 // ---- Video (Twitch embed, parent = actual hosting domain) ----
 function loadVideo(channel){
   videoWrap.innerHTML = '';
   const iframe = document.createElement('iframe');
   const parent = window.location.hostname || 'localhost';
-  iframe.src = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${parent}&muted=true`;
+  iframe.src = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${parent}`;
+  iframe.allow = 'autoplay; fullscreen'; // needed for the iframe to be allowed to autoplay with sound
   iframe.allowFullscreen = true;
   videoWrap.appendChild(iframe);
 }
@@ -566,6 +620,25 @@ function triggerNative(action, channel){
   }catch(e){ /* not running inside the installed app — ignore */ }
 }
 dualScreenBtn.addEventListener('click', toggleDualScreen);
+
+chatSendBtn.addEventListener('click', () => {
+  if(!localStorage.getItem(LS.token)){
+    setStatus('Sign in with Twitch to send messages.');
+    return;
+  }
+  chatSendBar.classList.toggle('hidden');
+  if(!chatSendBar.classList.contains('hidden')) chatSendInput.focus();
+});
+function submitChatMessage(){
+  sendChatMessage(chatSendInput.value);
+  chatSendInput.value = '';
+  chatSendBar.classList.add('hidden');
+}
+chatSendSubmit.addEventListener('click', submitChatMessage);
+chatSendInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter') submitChatMessage();
+  if(e.key === 'Escape') chatSendBar.classList.add('hidden');
+});
 window.addEventListener('resize', () => {
   if(document.body.classList.contains('role-video') || document.body.classList.contains('role-chat')){
     applyDualScreenLayout();
