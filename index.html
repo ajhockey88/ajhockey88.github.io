@@ -534,7 +534,6 @@ function triggerNative(action){
     a.remove();
   }catch(e){ /* not running inside the installed app — ignore */ }
 }
-}
 dualScreenBtn.addEventListener('click', toggleDualScreen);
 window.addEventListener('resize', () => {
   if(document.body.classList.contains('role-video') || document.body.classList.contains('role-chat')){
