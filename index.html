@@ -68,28 +68,7 @@ header .brand{font-weight:800; color:var(--accent); margin-right:4px; white-spac
 .followed-chip img{width:22px; height:22px; border-radius:50%}
 .followed-chip .live-dot{width:7px; height:7px; border-radius:50%; background:#eb0400; margin-right:2px}
 
-/* One-time setup modal (replaces the native browser prompt) */
-.modal-overlay{
-  position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50;
-  display:flex; align-items:center; justify-content:center; padding:20px;
-}
-.modal-overlay.hidden{display:none}
-.modal-box{
-  background:var(--panel); border:1px solid var(--border); border-radius:14px;
-  max-width:380px; width:100%; padding:20px; box-shadow:0 10px 40px rgba(0,0,0,.4);
-}
-.modal-box h2{margin:0 0 8px; font-size:17px}
-.modal-box p{margin:0 0 14px; font-size:13px; color:var(--sub); line-height:1.5}
-.modal-box input{
-  width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text);
-  border-radius:8px; padding:10px; font-size:14px; margin-bottom:12px;
-}
-.modal-box .modal-actions{display:flex; gap:8px; justify-content:flex-end}
-.modal-box a{font-size:12px}
-input[type=text]{
-  flex:1; min-width:120px; background:var(--panel2); border:1px solid var(--border);
-  color:var(--text); border-radius:8px; padding:8px 10px; font-size:14px;
-}
+#dualScreenBtn{display:flex; align-items:center}
 button{
   background:var(--accent); color:#fff; border:none; border-radius:8px;
   padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer;
@@ -121,6 +100,14 @@ main{
 .sysmsg{font-size:11px; color:var(--sub); font-style:italic}
 a{color:var(--accent)}
 
+/* Dual-screen mode: this window shows ONLY the pane matching whichever
+   physical screen it's currently on, full-bleed. Applied by JS after
+   detecting the screen's aspect ratio (see detectScreenRole()). */
+body.role-video #chat{display:none}
+body.role-video #videoWrap{flex:1 1 100%}
+body.role-chat #videoWrap{display:none}
+body.role-chat #chat{flex:1 1 100%; max-width:none}
+
 /* Only stack for genuinely narrow, tall (phone-portrait style) windows —
    the Thor's bottom screen is squarish but still wider than tall, so it
    keeps the side-by-side split, which shows far more chat lines. */
@@ -136,23 +123,16 @@ a{color:var(--accent)}
 <header id="header">
   <span class="brand">ThorStream</span>
   <button id="signInBtn" class="ghost-btn">Sign in with Twitch</button>
-  <input id="channelInput" type="text" placeholder="twitch channel name" autocapitalize="off" autocorrect="off" spellcheck="false">
-  <button id="connectBtn">Watch</button>
+  <button id="dualScreenBtn" class="ghost-btn" title="Dual-screen mode">
+    <svg width="18" height="14" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:-2px;margin-right:5px">
+      <rect x="1" y="1" width="16" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="1" y="8" width="16" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4"/>
+    </svg>Dual Screen
+  </button>
   <button id="collapseBtn" class="ghost-btn" title="Hide this bar">▴ hide</button>
-  <div id="status">Enter a channel and tap Watch, or sign in to see who's live.</div>
+  <div id="status">Sign in to see who's live.</div>
   <div id="followedBar"></div>
 </header>
-<div id="clientIdModal" class="modal-overlay hidden">
-  <div class="modal-box">
-    <h2>One-time app setup</h2>
-    <p>This only happens once on this device. ThorStream needs a Twitch app ID to connect — <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">create one free here</a> (Redirect URL: this app's URL), then paste the Client ID below.</p>
-    <input id="clientIdInput" type="text" placeholder="Twitch app Client ID" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <div class="modal-actions">
-      <button id="clientIdCancel" class="ghost-btn">Cancel</button>
-      <button id="clientIdSave">Continue</button>
-    </div>
-  </div>
-</div>
 <main>
   <div id="videoWrap">
     <div id="videoPlaceholder">Video + chat will load here once connected.</div>
@@ -162,12 +142,10 @@ a{color:var(--accent)}
 
 <script>
 const $ = s => document.querySelector(s);
-const chatEl = $('#chat'), statusEl = $('#status'), input = $('#channelInput'), btn = $('#connectBtn');
+const chatEl = $('#chat'), statusEl = $('#status');
 const videoWrap = $('#videoWrap');
 const headerEl = $('#header'), revealTab = $('#revealTab'), collapseBtn = $('#collapseBtn');
-const signInBtn = $('#signInBtn'), followedBar = $('#followedBar');
-const clientIdModal = $('#clientIdModal'), clientIdInput = $('#clientIdInput');
-const clientIdSave = $('#clientIdSave'), clientIdCancel = $('#clientIdCancel');
+const signInBtn = $('#signInBtn'), followedBar = $('#followedBar'), dualScreenBtn = $('#dualScreenBtn');
 
 let ws = null;
 let emoteMap = new Map();   // name -> img url (7TV, global+channel)
@@ -189,54 +167,27 @@ collapseBtn.addEventListener('click', () => collapseHeader());
 revealTab.addEventListener('click', () => expandHeader(true));
 
 // ---- Twitch OAuth (Implicit Grant, client-side only — no secret needed) ----
+// This Client ID belongs to the app itself (registered once by the developer
+// at dev.twitch.tv/console/apps) — every person using this app signs in with
+// their OWN Twitch username/password against this one app registration.
+const TWITCH_CLIENT_ID = '9kl2f7rc2j9enwe9pl3sdyar7ckhvu';
+
 const LS = {
-  clientId: 'tstv_client_id',
   token: 'tstv_token',
   login: 'tstv_login',
   avatar: 'tstv_avatar',
   pendingRefresh: 'tstv_pending_refresh',
+  dualChannel: 'tstv_dual_channel',
 };
 
-function getClientId(){
-  const existing = localStorage.getItem(LS.clientId);
-  if(existing) return Promise.resolve(existing);
-  return new Promise(resolve => {
-    clientIdInput.value = '';
-    clientIdModal.classList.remove('hidden');
-    clientIdInput.focus();
-    function cleanup(result){
-      clientIdModal.classList.add('hidden');
-      clientIdSave.removeEventListener('click', onSave);
-      clientIdCancel.removeEventListener('click', onCancel);
-      resolve(result);
-    }
-    function onSave(){
-      const id = clientIdInput.value.trim();
-      if(!id) return;
-      localStorage.setItem(LS.clientId, id);
-      cleanup(id);
-    }
-    function onCancel(){ cleanup(null); }
-    clientIdSave.addEventListener('click', onSave);
-    clientIdCancel.addEventListener('click', onCancel);
-    clientIdInput.addEventListener('keydown', e => { if(e.key === 'Enter') onSave(); });
-  });
-}
-
 async function signIn(){
-  console.log('[ThorStream] Sign In tapped');
-  const clientId = await getClientId();
-  console.log('[ThorStream] clientId:', clientId ? '(present, ' + clientId.length + ' chars)' : '(none — setup cancelled)');
-  if(!clientId) return;
   const redirect = window.location.origin + window.location.pathname; // clean URL, ignores any leftover ?query junk
   const url = 'https://id.twitch.tv/oauth2/authorize'
-    + '?client_id=' + encodeURIComponent(clientId)
+    + '?client_id=' + encodeURIComponent(TWITCH_CLIENT_ID)
     + '&redirect_uri=' + encodeURIComponent(redirect)
     + '&response_type=token'
     + '&scope=' + encodeURIComponent('user:read:follows');
-  console.log('[ThorStream] navigating to:', url);
   window.location.href = url;
-  console.log('[ThorStream] navigation call completed (if you see this, the redirect did not immediately happen)');
 }
 
 function signOut(){
@@ -267,9 +218,8 @@ async function handleOAuthRedirect(){
   if(!token) return;
   localStorage.setItem(LS.token, token);
   try{
-    const clientId = localStorage.getItem(LS.clientId);
     const me = await fetch('https://api.twitch.tv/helix/users', {
-      headers: { 'Client-Id': clientId, 'Authorization': 'Bearer ' + token }
+      headers: { 'Client-Id': TWITCH_CLIENT_ID, 'Authorization': 'Bearer ' + token }
     }).then(r=>r.json());
     const user = me?.data?.[0];
     if(user){
@@ -296,22 +246,21 @@ async function handleOAuthRedirect(){
     returnLink.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;'
       + 'background:#0e0e10;color:#efeff1;font-size:18px;z-index:999;text-decoration:none;';
     document.body.appendChild(returnLink);
-    setTimeout(() => { window.location.href = returnIntent; }, 20000); // TEMP: extended for debugging — normally 400
+    setTimeout(() => { window.location.href = returnIntent; }, 600); // auto-attempt
   }
 }
 
 async function loadFollowedLive(){
   const token = localStorage.getItem(LS.token);
-  const clientId = localStorage.getItem(LS.clientId);
-  if(!token || !clientId) return;
+  if(!token) return;
   try{
     const me = await fetch('https://api.twitch.tv/helix/users', {
-      headers: { 'Client-Id': clientId, 'Authorization': 'Bearer ' + token }
+      headers: { 'Client-Id': TWITCH_CLIENT_ID, 'Authorization': 'Bearer ' + token }
     }).then(r=>r.json());
     const userId = me?.data?.[0]?.id;
     if(!userId) return;
     const live = await fetch('https://api.twitch.tv/helix/streams/followed?user_id=' + userId, {
-      headers: { 'Client-Id': clientId, 'Authorization': 'Bearer ' + token }
+      headers: { 'Client-Id': TWITCH_CLIENT_ID, 'Authorization': 'Bearer ' + token }
     }).then(r=>r.json());
     renderFollowed(live?.data || []);
   }catch(e){ console.warn('followed streams fetch failed', e); }
@@ -332,7 +281,7 @@ function renderFollowed(streams){
     const chip = document.createElement('div');
     chip.className = 'followed-chip';
     chip.innerHTML = `<span class="live-dot"></span>${s.user_name} · ${s.viewer_count.toLocaleString()}`;
-    chip.addEventListener('click', () => { input.value = s.user_login; goLive(); });
+    chip.addEventListener('click', () => watchChannel(s.user_login));
     followedBar.appendChild(chip);
   });
 }
@@ -510,29 +459,103 @@ function loadVideo(channel){
   videoWrap.appendChild(iframe);
 }
 
-async function goLive(){
-  const channel = input.value.trim().toLowerCase().replace(/^#/, '');
+async function watchChannel(channel){
+  channel = (channel || '').trim().toLowerCase().replace(/^#/, '');
   if(!channel) return;
   currentChannel = channel;
-  btn.disabled = true;
+  if(localStorage.getItem(LS.dualChannel)) localStorage.setItem(LS.dualChannel, channel); // keep a dual-screen partner window in sync, if active
   chatEl.innerHTML = '';
   setStatus('Loading 7TV emotes for #' + channel + '…');
   loadVideo(channel);
   await loadSevenTV(channel);
   connectIRC(channel);
   addSystemMsg(`Joined #${channel}. ${emoteMap.size} 7TV emotes active.`);
-  btn.disabled = false;
   expandHeader(true); // briefly confirm, then auto-hide so video+chat get full screen
 }
 
-btn.addEventListener('click', goLive);
-input.addEventListener('keydown', e => { if(e.key === 'Enter') goLive(); });
+// ---- Dual-screen mode ----
+// A web page can't paint two different physical displays at once — that
+// needs native Android multi-display code. What we CAN do: detect which
+// screen THIS window instance is currently on (by aspect ratio — the
+// Thor's top screen is wide/16:9, the bottom is squarer) and show only
+// that screen's relevant pane, full-bleed. Open the app on both screens
+// (drag one instance to each) and each configures itself automatically,
+// staying in sync on which channel via shared localStorage.
+function detectScreenRole(){
+  const forced = new URLSearchParams(location.search).get('screen');
+  if(forced === 'chat' || forced === 'video') return forced;
+  const ratio = window.innerWidth / window.innerHeight;
+  return ratio > 1.4 ? 'video' : 'chat';
+}
+
+function applyDualScreenLayout(){
+  const role = detectScreenRole();
+  document.body.classList.remove('role-video', 'role-chat');
+  document.body.classList.add(role === 'video' ? 'role-video' : 'role-chat');
+}
+
+async function toggleDualScreen(){
+  const isActive = document.body.classList.contains('role-video') || document.body.classList.contains('role-chat');
+
+  if(isActive){
+    // Turn off — restore the normal single-window side-by-side view,
+    // and tell native code to dismiss the second-screen chat window.
+    document.body.classList.remove('role-video', 'role-chat');
+    localStorage.removeItem(LS.dualChannel);
+    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+    triggerNative('dual-screen-off');
+    setStatus('Dual-screen mode off.');
+    return;
+  }
+
+  if(!currentChannel){
+    setStatus('Pick a live channel from your followed list first, then tap Dual Screen.');
+    return;
+  }
+  localStorage.setItem(LS.dualChannel, currentChannel);
+  try{ await document.documentElement.requestFullscreen(); }catch(e){ /* fine if unsupported/blocked */ }
+  applyDualScreenLayout();
+  collapseHeader();
+  triggerNative('dual-screen-on');
+  setStatus('Dual-screen mode on — chat should appear on the other screen automatically. Tap Dual Screen again to turn it off.');
+}
+
+// Fires the app's own custom link scheme, caught by a tiny invisible native
+// Activity (see AndroidManifest.xml) that shows/hides chat on the second
+// physical display. Wrapped in try/catch since this scheme only resolves
+// inside the installed app itself — harmless no-op anywhere else (e.g. if
+// you're testing this page in a plain desktop browser).
+function triggerNative(action){
+  try{
+    const a = document.createElement('a');
+    a.href = 'thorstream://' + action;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }catch(e){ /* not running inside the installed app — ignore */ }
+}
+}
+dualScreenBtn.addEventListener('click', toggleDualScreen);
+window.addEventListener('resize', () => {
+  if(document.body.classList.contains('role-video') || document.body.classList.contains('role-chat')){
+    applyDualScreenLayout();
+  }
+});
 
 if(location.search.includes('error=')) history.replaceState(null, '', location.pathname); // clear stale error params
 
 updateSignInButton();
 handleOAuthRedirect();
 if(localStorage.getItem(LS.token)) loadFollowedLive();
+
+// The app-in-a-second-display Presentation loads with ?screen=chat — connect
+// it straight to whatever channel is currently being watched, since it has
+// no followed-list UI of its own.
+if(new URLSearchParams(location.search).get('screen') === 'chat'){
+  applyDualScreenLayout();
+  const ch = localStorage.getItem(LS.dualChannel);
+  if(ch) watchChannel(ch);
+}
 
 // The Twitch sign-in tab is a separate window from this app (see signIn()) —
 // it saves the token to shared localStorage itself. When you switch back
