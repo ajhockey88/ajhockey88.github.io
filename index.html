@@ -115,6 +115,7 @@ body.role-video #chat{display:none}
 body.role-chat #videoWrap{display:none}
 body.role-chat #chat{left:0; width:auto}
 body.role-chat #revealTab{display:none !important}
+body.role-chat header{display:none !important}
 
 /* Only stack for genuinely narrow, tall (phone-portrait style) windows —
    the Thor's bottom screen is squarish but still wider than tall, so it
@@ -517,6 +518,7 @@ async function toggleDualScreen(){
     // Turn off — restore the normal single-window side-by-side view,
     // and tell native code to dismiss the second-screen chat window.
     document.body.classList.remove('role-video', 'role-chat');
+    videoWrap.style.transform = ''; // reset the zoom applied for full-bleed video — leaving this on was cropping the normal view
     localStorage.removeItem(LS.dualChannel);
     triggerNative('dual-screen-off');
     setStatus('Dual-screen mode off.');
