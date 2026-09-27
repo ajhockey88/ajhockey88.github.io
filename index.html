@@ -79,16 +79,18 @@ button:active{background:var(--accent2)}
 button:disabled{opacity:.5}
 #status{font-size:11px; color:var(--sub); width:100%; order:99}
 
-/* Fill all remaining vertical space. Video ALWAYS fills the full area as a
-   base layer that never changes size — chat floats on top as an overlay.
-   This matters: resizing the video element (which used to happen when chat
-   was hidden/shown via flex) was interrupting Twitch's player. Keeping its
-   box permanently fixed avoids that entirely. */
+/* Fill all remaining vertical space. Video's REAL box permanently reserves
+   room for chat — it never resizes, which is what avoids interrupting
+   Twitch's player. For dual-screen full-bleed mode, we visually stretch it
+   with a CSS transform (pure compositing, not a real resize) instead of
+   changing its actual width — see applyDualScreenLayout() in the script. */
+:root{ --chat-width: clamp(220px, 32vw, 380px); }
 main{
   flex:1; min-height:0; position:relative;
 }
 #videoWrap{
-  position:absolute; inset:0; background:#000;
+  position:absolute; top:0; left:0; bottom:0; right:var(--chat-width);
+  background:#000; transform-origin:top left;
 }
 #videoWrap iframe{position:absolute; inset:0; width:100%; height:100%; border:0; display:block}
 #videoPlaceholder{
@@ -97,7 +99,7 @@ main{
 }
 #chat{
   position:absolute; top:0; right:0; bottom:0;
-  width:clamp(220px, 32vw, 380px); overflow-y:auto; overflow-x:hidden;
+  width:var(--chat-width); overflow-y:auto; overflow-x:hidden;
   padding:8px 10px; background:#000; color:#fff; border-left:1px solid var(--border);
   display:flex; flex-direction:column; gap:4px;
 }
@@ -107,12 +109,12 @@ main{
 .sysmsg{font-size:11px; color:#9a9a9a; font-style:italic}
 a{color:var(--accent)}
 
-/* Dual-screen mode: this window shows ONLY the pane matching whichever
-   physical screen it's currently on, full-bleed. Video's box never changes
-   size either way — only chat's overlay visibility/size changes. */
+/* Dual-screen mode: chat hides, and video is visually stretched (via a JS-
+   applied transform, not a resize) to fill the freed space full-bleed. */
 body.role-video #chat{display:none}
 body.role-chat #videoWrap{display:none}
 body.role-chat #chat{left:0; width:auto}
+body.role-chat #revealTab{display:none !important}
 
 /* Only stack for genuinely narrow, tall (phone-portrait style) windows —
    the Thor's bottom screen is squarish but still wider than tall, so it
@@ -496,6 +498,16 @@ function applyDualScreenLayout(){
   const role = detectScreenRole();
   document.body.classList.remove('role-video', 'role-chat');
   document.body.classList.add(role === 'video' ? 'role-video' : 'role-chat');
+
+  // Stretch video to fill the screen via a CSS transform (pure compositing)
+  // instead of actually resizing it — resizing the real element is what was
+  // interrupting Twitch's player before.
+  if(role === 'video'){
+    const scale = window.innerWidth / videoWrap.getBoundingClientRect().width;
+    videoWrap.style.transform = `scale(${scale})`;
+  } else {
+    videoWrap.style.transform = '';
+  }
 }
 
 async function toggleDualScreen(){
