@@ -91,13 +91,13 @@ main{
 }
 #chat{
   flex:0 0 clamp(220px, 32vw, 380px); height:100%; overflow-y:auto; overflow-x:hidden;
-  padding:8px 10px; background:var(--panel); border-left:1px solid var(--border);
+  padding:8px 10px; background:#000; color:#fff; border-left:1px solid var(--border);
   display:flex; flex-direction:column; gap:4px;
 }
 .msg{font-size:13px; line-height:1.5; word-wrap:break-word; overflow-wrap:anywhere}
 .msg .name{font-weight:700; margin-right:4px}
 .msg .emote{height:1.5em; vertical-align:middle; display:inline-block; margin:0 1px}
-.sysmsg{font-size:11px; color:var(--sub); font-style:italic}
+.sysmsg{font-size:11px; color:#9a9a9a; font-style:italic}
 a{color:var(--accent)}
 
 /* Dual-screen mode: this window shows ONLY the pane matching whichever
