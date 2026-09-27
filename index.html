@@ -305,7 +305,11 @@ function addSystemMsg(t){
 }
 
 function trimAndScroll(){
-  while(chatEl.children.length > 200) chatEl.removeChild(chatEl.firstChild);
+  while(chatEl.children.length > 75){
+    const oldest = chatEl.firstChild;
+    oldest.querySelectorAll && oldest.querySelectorAll('.emote').forEach(img => emoteObserver.unobserve(img));
+    chatEl.removeChild(oldest);
+  }
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 
@@ -337,6 +341,33 @@ function addSevenTVEmote(e){
     const url = 'https:' + host.url + '/' + file.name;
     emoteMap.set(e.name, url);
   }catch(err){}
+}
+
+// ---- Emote images: only animate while actually visible on screen ----
+// Scrolling an animated emote out of view doesn't stop the browser from
+// still decoding/rendering it unless we explicitly unload it — this is a
+// real, ongoing battery cost on emote-heavy channels. The observer below
+// loads an emote's image only when it's on screen, and unloads it (freezing
+// it, stopping decode work entirely) the moment it scrolls out of view.
+const emoteObserver = new IntersectionObserver((entries)=>{
+  entries.forEach(entry=>{
+    const img = entry.target;
+    if(entry.isIntersecting){
+      if(img.src !== img.dataset.src) img.src = img.dataset.src;
+    } else {
+      img.removeAttribute('src'); // stops animation/decoding entirely while scrolled away
+    }
+  });
+}, { root: chatEl, rootMargin: '50px' });
+
+function makeEmoteImg(url, alt){
+  const img = document.createElement('img');
+  img.className = 'emote';
+  img.dataset.src = url;
+  img.alt = alt;
+  img.title = alt;
+  emoteObserver.observe(img);
+  return img;
 }
 
 // ---- Twitch native emote image from id ----
@@ -378,12 +409,7 @@ function renderMessage(text, emotesTag, displayName, color){
     const words = str.split(/(\s+)/);
     words.forEach(w=>{
       if(emoteMap.has(w)){
-        const img = document.createElement('img');
-        img.className = 'emote';
-        img.src = emoteMap.get(w);
-        img.alt = w;
-        img.title = w;
-        frag.appendChild(img);
+        frag.appendChild(makeEmoteImg(emoteMap.get(w), w));
       } else if(w.length){
         frag.appendChild(document.createTextNode(w));
       }
@@ -392,11 +418,8 @@ function renderMessage(text, emotesTag, displayName, color){
 
   ranges.forEach(r=>{
     if(r.start > cursor) pushText(chars.slice(cursor, r.start).join(''));
-    const img = document.createElement('img');
-    img.className = 'emote';
-    img.src = twitchEmoteUrl(r.id);
-    img.alt = chars.slice(r.start, r.end+1).join('');
-    frag.appendChild(img);
+    const alt = chars.slice(r.start, r.end+1).join('');
+    frag.appendChild(makeEmoteImg(twitchEmoteUrl(r.id), alt));
     cursor = r.end + 1;
   });
   if(cursor < chars.length) pushText(chars.slice(cursor).join(''));
@@ -595,12 +618,13 @@ window.addEventListener('hashchange', () => { handleOAuthRedirect(); });
 // when Android resumes this app after the Chrome sign-in hand-off — some
 // resume paths don't reliably trigger those events in this context. Poll
 // for the flag instead, so the reload happens regardless.
-setInterval(() => {
+const pendingRefreshPoll = setInterval(() => {
   if(localStorage.getItem(LS.pendingRefresh)){
     localStorage.removeItem(LS.pendingRefresh);
     if(!localStorage.getItem(LS.login)) location.reload(); // only reload if not already signed in
   }
 }, 1200);
+setTimeout(() => clearInterval(pendingRefreshPoll), 5 * 60 * 1000); // only useful briefly after Sign In — no need to keep waking up forever
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
