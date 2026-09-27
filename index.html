@@ -505,7 +505,7 @@ function applyDualScreenLayout(){
   // interrupting Twitch's player before.
   if(role === 'video'){
     const scale = window.innerWidth / videoWrap.getBoundingClientRect().width;
-    videoWrap.style.transform = `scale(${scale})`;
+    videoWrap.style.transform = `scaleX(${scale})`;
   } else {
     videoWrap.style.transform = '';
   }
