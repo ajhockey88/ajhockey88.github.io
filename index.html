@@ -516,7 +516,7 @@ async function toggleDualScreen(){
   try{ await document.documentElement.requestFullscreen(); }catch(e){ /* fine if unsupported/blocked */ }
   applyDualScreenLayout();
   collapseHeader();
-  triggerNative('dual-screen-on');
+  triggerNative('dual-screen-on', currentChannel);
   setStatus('Dual-screen mode on — chat should appear on the other screen automatically. Tap Dual Screen again to turn it off.');
 }
 
@@ -525,10 +525,10 @@ async function toggleDualScreen(){
 // physical display. Wrapped in try/catch since this scheme only resolves
 // inside the installed app itself — harmless no-op anywhere else (e.g. if
 // you're testing this page in a plain desktop browser).
-function triggerNative(action){
+function triggerNative(action, channel){
   try{
     const a = document.createElement('a');
-    a.href = 'thorstream://' + action;
+    a.href = 'thorstream://' + action + (channel ? ('?channel=' + encodeURIComponent(channel)) : '');
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -547,12 +547,13 @@ updateSignInButton();
 handleOAuthRedirect();
 if(localStorage.getItem(LS.token)) loadFollowedLive();
 
-// The app-in-a-second-display Presentation loads with ?screen=chat — connect
-// it straight to whatever channel is currently being watched, since it has
-// no followed-list UI of its own.
+// The app-in-a-second-display Presentation loads with ?screen=chat&channel=xyz
+// — native code passes the channel directly since this WebView doesn't share
+// localStorage with the main TWA window (different rendering engine/storage).
 if(new URLSearchParams(location.search).get('screen') === 'chat'){
   applyDualScreenLayout();
-  const ch = localStorage.getItem(LS.dualChannel);
+  collapseHeader(); // full-bleed chat view — no controls needed here
+  const ch = new URLSearchParams(location.search).get('channel');
   if(ch) watchChannel(ch);
 }
 
