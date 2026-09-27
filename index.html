@@ -64,6 +64,7 @@ header.collapsed{
 }
 #chatSendBtn:active{background:var(--accent2)}
 body.role-video #chatSendBtn, body.role-video #chatSendBar{display:none}
+body.role-chat #chatSendBtn, body.role-chat #chatSendBar{display:none}
 
 #chatSendBar{
   position:absolute; right:16px; bottom:16px; left:16px; z-index:16;
@@ -215,6 +216,7 @@ const TWITCH_CLIENT_ID = '9kl2f7rc2j9enwe9pl3sdyar7ckhvu';
 const LS = {
   token: 'tstv_token',
   login: 'tstv_login',
+  loginName: 'tstv_login_name', // canonical lowercase login — required for IRC auth, distinct from the display name shown in the UI
   avatar: 'tstv_avatar',
   pendingRefresh: 'tstv_pending_refresh',
   dualChannel: 'tstv_dual_channel',
@@ -233,6 +235,7 @@ async function signIn(){
 function signOut(){
   localStorage.removeItem(LS.token);
   localStorage.removeItem(LS.login);
+  localStorage.removeItem(LS.loginName);
   localStorage.removeItem(LS.avatar);
   followedBar.innerHTML = '';
   updateSignInButton();
@@ -264,6 +267,7 @@ async function handleOAuthRedirect(){
     const user = me?.data?.[0];
     if(user){
       localStorage.setItem(LS.login, user.display_name);
+      localStorage.setItem(LS.loginName, user.login);
       localStorage.setItem(LS.avatar, user.profile_image_url);
     }
   }catch(e){ console.warn('Twitch user lookup failed', e); }
@@ -473,12 +477,12 @@ function parseTags(tagStr){
   return tags;
 }
 
-function connectIRC(channel){
+function connectIRC(channel, forceAnonymous){
   if(ws){ try{ ws.close(); }catch(e){} }
-  ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+  const thisSocket = ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
 
-  const token = localStorage.getItem(LS.token);
-  const login = localStorage.getItem(LS.login);
+  const token = !forceAnonymous && localStorage.getItem(LS.token);
+  const login = !forceAnonymous && localStorage.getItem(LS.loginName);
 
   ws.onopen = () => {
     ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
@@ -514,13 +518,20 @@ function connectIRC(channel){
         }
       }
       if(rest.includes('NOTICE') && rest.toLowerCase().includes('login authentication failed')){
-        setStatus('Sign-in needs to be refreshed to send messages — sign out and sign in again.');
+        setStatus('Sign-in expired — reconnecting so chat still works. Sign out and back in to send messages.');
       }
     });
   };
 
   ws.onerror = () => setStatus('Chat connection error.');
-  ws.onclose = () => setStatus('Chat disconnected.');
+  ws.onclose = () => {
+    if(ws !== thisSocket) return; // a newer connection already replaced this one — ignore this stale event
+    if(token){
+      connectIRC(channel, true); // authenticated attempt failed (likely an expired token) — fall back so reading chat still works
+      return;
+    }
+    setStatus('Chat disconnected.');
+  };
 }
 
 function sendChatMessage(text){
