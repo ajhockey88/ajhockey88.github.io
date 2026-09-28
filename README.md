@@ -29,3 +29,9 @@ It installs and runs like a real app — no browser bar, no clutter, just your s
 ## 🔒 A note on privacy
 
 There's no backend, no database, and no analytics anywhere in this app. Signing in with Twitch happens directly between you and Twitch, and your sign-in stays on your device — nothing about how you use the app is ever visible to anyone else. 🙌
+
+## Support Development
+
+I don't ask for donations, but if you enjoy this app and would like to support its continued development, any tip is greatly appreciated! Thank you for your support!
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/P5K727UIVJ)
