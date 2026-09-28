@@ -429,7 +429,7 @@ const SECOND_SCREEN = CHAT_ONLY || new URLSearchParams(location.search).get('scr
 const SAVER_KEY = 'tstv_saver';
 let bottomSaver = new URLSearchParams(location.search).get('saver') === '1';
 function isSaver(){ return SECOND_SCREEN ? bottomSaver : localStorage.getItem(SAVER_KEY) === '1'; }
-function chatMax(){ return isSaver() ? 20 : 30; }
+function chatMax(){ return isSaver() ? 75 : 150; }
 function chatFlushMs(){ return isSaver() ? 1000 : 250; }
 
 async function signIn(){
