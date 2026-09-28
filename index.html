@@ -96,7 +96,31 @@ header .brand{font-weight:800; color:var(--accent); margin-right:4px; white-spac
 .followed-chip img{width:22px; height:22px; border-radius:50%}
 .followed-chip .live-dot{width:7px; height:7px; border-radius:50%; background:#eb0400; margin-right:2px}
 
-#dualScreenBtn{display:flex; align-items:center}
+#dualScreenBtn, #saverBtn{display:flex; align-items:center}
+#saverBtn.on{background:rgba(145,71,255,.28); border-color:var(--accent)}
+
+/* Message preview card (single-screen mode) — same look as the native card used in dual-screen mode */
+#draftPreview{
+  position:fixed; top:28px; left:50%; z-index:40; width:min(85vw, 640px);
+  padding:14px 18px 18px; border-radius:22px; border:2px solid #9147ff;
+  background:linear-gradient(135deg, rgba(38,28,64,.94), rgba(14,14,20,.94));
+  opacity:0; transform:translate(-50%, -16px); pointer-events:none;
+  transition:opacity .18s ease, transform .18s ease;
+}
+#draftPreview.show{opacity:1; transform:translate(-50%, 0)}
+#draftPreview .dp-head{display:flex; align-items:center}
+#draftPreview .dp-dot{width:8px; height:8px; border-radius:50%; background:#9147ff; margin-right:8px}
+#draftPreview .dp-title{flex:1; font-size:11px; font-weight:700; letter-spacing:.12em; color:#b9a3ff}
+#draftPreview .dp-count{font-size:11px; font-weight:700; color:#8b8b99}
+#draftPreview .dp-count.warn{color:#ffc857}
+#draftPreview .dp-count.over{color:#ff5c5c}
+/* keeps the END of a very long message visible (where you're typing) by clipping from the top */
+#draftPreview .dp-body{
+  margin-top:10px; max-height:calc(12 * 1.25 * 17px); overflow:hidden;
+  display:flex; flex-direction:column; justify-content:flex-end;
+}
+#draftPreview .dp-text{font-size:17px; line-height:1.25; color:#fff; white-space:pre-wrap; overflow-wrap:anywhere}
+#draftPreview .caret{color:#9147ff}
 button{
   background:var(--accent); color:#fff; border:none; border-radius:8px;
   padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer;
@@ -163,6 +187,13 @@ body.role-chat header{display:none !important}
       <rect x="1" y="8" width="16" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4"/>
     </svg>Dual Screen
   </button>
+  <button id="saverBtn" class="ghost-btn" title="Battery saver: lower video quality, still emotes, lighter chat">
+    <svg width="20" height="12" viewBox="0 0 20 12" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:-2px;margin-right:5px">
+      <rect x="1" y="1" width="15" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="17" y="4" width="2" height="4" rx=".8" fill="currentColor"/>
+      <rect x="3.5" y="3.5" width="6" height="5" rx="1" fill="currentColor"/>
+    </svg><span id="saverLabel">Saver: Off</span>
+  </button>
   <button id="collapseBtn" class="ghost-btn" title="Hide this bar">▴ hide</button>
   <div id="status">Sign in to see who's live.</div>
   <div id="followedBar"></div>
@@ -183,6 +214,11 @@ body.role-chat header{display:none !important}
   </div>
 </main>
 
+<div id="draftPreview" aria-hidden="true">
+  <div class="dp-head"><span class="dp-dot"></span><span class="dp-title">MESSAGE PREVIEW</span><span class="dp-count" id="dpCount">0 / 500</span></div>
+  <div class="dp-body"><div class="dp-text" id="dpText"></div></div>
+</div>
+
 <script>
 const $ = s => document.querySelector(s);
 const chatEl = $('#chat'), statusEl = $('#status');
@@ -191,6 +227,8 @@ const headerEl = $('#header'), revealTab = $('#revealTab'), collapseBtn = $('#co
 const signInBtn = $('#signInBtn'), followedBar = $('#followedBar'), dualScreenBtn = $('#dualScreenBtn');
 const chatSendBtn = $('#chatSendBtn'), chatSendBar = $('#chatSendBar');
 const chatSendInput = $('#chatSendInput'), chatSendSubmit = $('#chatSendSubmit');
+const saverBtn = $('#saverBtn'), saverLabel = $('#saverLabel');
+const draftPreview = $('#draftPreview'), dpText = $('#dpText'), dpCount = $('#dpCount');
 
 let ws = null;
 let emoteMap = new Map();   // name -> img url (7TV, global+channel)
@@ -221,10 +259,24 @@ const LS = {
   token: 'tstv_token',
   login: 'tstv_login',
   loginName: 'tstv_login_name', // canonical lowercase login — required for IRC auth, distinct from the display name shown in the UI
+  userId: 'tstv_user_id',       // cached so the followed-streams check doesn't need an extra lookup call each time
   avatar: 'tstv_avatar',
   pendingRefresh: 'tstv_pending_refresh',
   dualChannel: 'tstv_dual_channel',
 };
+
+// True only in the bottom-screen chat window (loaded by native code with ?screen=chat).
+const CHAT_ONLY = new URLSearchParams(location.search).get('screen') === 'chat';
+
+// ---- Battery saver ----
+// When on: video is capped at a lower quality (the biggest saving), emotes are shown as
+// still images instead of animated ones, and chat keeps fewer messages and redraws less often.
+// The main window remembers the choice; the bottom chat-only window is told by native code.
+const SAVER_KEY = 'tstv_saver';
+let bottomSaver = new URLSearchParams(location.search).get('saver') === '1';
+function isSaver(){ return CHAT_ONLY ? bottomSaver : localStorage.getItem(SAVER_KEY) === '1'; }
+function chatMax(){ return isSaver() ? 20 : 30; }
+function chatFlushMs(){ return isSaver() ? 1000 : 250; }
 
 async function signIn(){
   const redirect = window.location.origin + window.location.pathname; // clean URL, ignores any leftover ?query junk
@@ -240,6 +292,7 @@ function signOut(){
   localStorage.removeItem(LS.token);
   localStorage.removeItem(LS.login);
   localStorage.removeItem(LS.loginName);
+  localStorage.removeItem(LS.userId);
   localStorage.removeItem(LS.avatar);
   followedBar.innerHTML = '';
   updateSignInButton();
@@ -272,11 +325,12 @@ async function handleOAuthRedirect(){
     if(user){
       localStorage.setItem(LS.login, user.display_name);
       localStorage.setItem(LS.loginName, user.login);
+      if(user.id) localStorage.setItem(LS.userId, user.id);
       localStorage.setItem(LS.avatar, user.profile_image_url);
     }
   }catch(e){ console.warn('Twitch user lookup failed', e); }
   updateSignInButton();
-  loadFollowedLive();
+  loadFollowedLive(true);
 
   // If this page loaded in a plain browser tab (not the installed app
   // itself — display-mode tells us which), automatically hand control
@@ -298,19 +352,29 @@ async function handleOAuthRedirect(){
   }
 }
 
-async function loadFollowedLive(){
+let lastFollowedFetch = 0;
+const FOLLOWED_MIN_MS = 60 * 1000;
+
+async function loadFollowedLive(force){
+  if(CHAT_ONLY) return; // the bottom chat-only screen has no followed list
   const token = localStorage.getItem(LS.token);
   if(!token) return;
+  const now = Date.now();
+  // Resume events (focus + visibilitychange) fire in bursts — don't refetch for each one.
+  if(!force && now - lastFollowedFetch < FOLLOWED_MIN_MS) return;
+  lastFollowedFetch = now;
+  const headers = { 'Client-Id': TWITCH_CLIENT_ID, 'Authorization': 'Bearer ' + token };
   try{
-    const me = await fetch('https://api.twitch.tv/helix/users', {
-      headers: { 'Client-Id': TWITCH_CLIENT_ID, 'Authorization': 'Bearer ' + token }
-    }).then(r=>r.json());
-    const userId = me?.data?.[0]?.id;
-    if(!userId) return;
-    const live = await fetch('https://api.twitch.tv/helix/streams/followed?user_id=' + userId, {
-      headers: { 'Client-Id': TWITCH_CLIENT_ID, 'Authorization': 'Bearer ' + token }
-    }).then(r=>r.json());
-    renderFollowed(live?.data || []);
+    let userId = localStorage.getItem(LS.userId);
+    if(!userId){
+      const me = await fetch('https://api.twitch.tv/helix/users', { headers }).then(r=>r.json());
+      userId = me?.data?.[0]?.id;
+      if(!userId) return;
+      localStorage.setItem(LS.userId, userId);
+    }
+    const live = await fetch('https://api.twitch.tv/helix/streams/followed?user_id=' + userId, { headers }).then(r=>r.json());
+    if(!live || !Array.isArray(live.data)) return; // expired token or API error — leave the list as it was
+    renderFollowed(live.data);
   }catch(e){ console.warn('followed streams fetch failed', e); }
 }
 
@@ -336,16 +400,50 @@ function renderFollowed(streams){
 
 function setStatus(t){ statusEl.textContent = t; }
 
-function addSystemMsg(t){
-  const d = document.createElement('div');
-  d.className = 'sysmsg';
-  d.textContent = t;
-  chatEl.appendChild(d);
+// ---- Chat rendering: batched ----
+// Busy channels send many messages per second. Rendering each one immediately meant a
+// full layout pass per message. Instead, messages are queued and drawn together a few
+// times a second — and since only the newest 30 (20 in battery saver) are ever kept, anything older than
+// that in a batch is skipped entirely instead of built and thrown away.
+let pendingChat = [];
+let flushTimer = null;
+
+function queueChat(item){
+  pendingChat.push(item);
+  if(pendingChat.length > chatMax()) pendingChat.splice(0, pendingChat.length - chatMax());
+  if(!flushTimer) flushTimer = setTimeout(flushChat, chatFlushMs());
+}
+
+function flushChat(){
+  if(flushTimer){ clearTimeout(flushTimer); flushTimer = null; }
+  if(!pendingChat.length) return;
+  const items = pendingChat;
+  pendingChat = [];
+  const frag = document.createDocumentFragment();
+  items.forEach(it => frag.appendChild(
+    it.sys ? buildSystemNode(it.text) : buildMessageNode(it.text, it.emotesTag, it.displayName, it.color)));
+  chatEl.appendChild(frag);
   trimAndScroll();
 }
 
+function clearChat(){
+  pendingChat = [];
+  if(flushTimer){ clearTimeout(flushTimer); flushTimer = null; }
+  chatEl.innerHTML = '';
+  emoteObserver.disconnect(); // release the removed emote images instead of letting the observer hold them
+}
+
+function buildSystemNode(t){
+  const d = document.createElement('div');
+  d.className = 'sysmsg';
+  d.textContent = t;
+  return d;
+}
+
+function addSystemMsg(t){ queueChat({ sys:true, text:t }); }
+
 function trimAndScroll(){
-  while(chatEl.children.length > 30){
+  while(chatEl.children.length > chatMax()){
     const oldest = chatEl.firstChild;
     oldest.querySelectorAll && oldest.querySelectorAll('.emote').forEach(img => emoteObserver.unobserve(img));
     chatEl.removeChild(oldest);
@@ -353,34 +451,83 @@ function trimAndScroll(){
   chatEl.scrollTop = chatEl.scrollHeight;
 }
 
-// ---- 7TV emote loading ----
-async function loadSevenTV(channel){
-  emoteMap = new Map();
-  try{
-    const g = await fetch('https://7tv.io/v3/emote-sets/global').then(r=>r.json());
-    (g.emotes||[]).forEach(addSevenTVEmote);
-  }catch(e){ console.warn('7TV global load failed', e); }
+// ---- 7TV emote loading (cached) ----
+// The emote lists are large and rarely change. They used to be re-downloaded on every
+// channel start; now a compact copy is kept for a few hours, so re-opening the app or
+// switching back to a recent channel costs no network at all.
+const EMOTE_CACHE_MS = 6 * 60 * 60 * 1000;
+const EMOTE_CACHE_MAX_CHANNELS = 8;
+const EMOTE_INDEX_KEY = 'tstv_7tv2_index';
+// Drop the older cache format (it didn't store the still-image versions used by battery saver).
+try{ Object.keys(localStorage).filter(k => k.startsWith('tstv_7tv_')).forEach(k => localStorage.removeItem(k)); }catch(e){}
 
+function cacheGet(key){
   try{
-    const userRes = await fetch('https://api.ivr.fi/v2/twitch/user?login=' + encodeURIComponent(channel)).then(r=>r.json());
-    const twitchId = Array.isArray(userRes) ? userRes[0]?.id : userRes?.id;
-    if(twitchId){
-      const stv = await fetch('https://7tv.io/v3/users/twitch/' + twitchId).then(r=> r.ok ? r.json() : null);
-      const set = stv?.emote_set?.emotes;
-      if(set) set.forEach(addSevenTVEmote);
-    }
-  }catch(e){ console.warn('7TV channel load failed', e); }
-
-  setStatus(`Loaded ${emoteMap.size} 7TV emotes for #${channel}. Connecting to chat…`);
+    const raw = localStorage.getItem(key);
+    if(!raw) return null;
+    const o = JSON.parse(raw);
+    return (o && Date.now() - o.t < EMOTE_CACHE_MS) ? o.v : null;
+  }catch(e){ return null; }
+}
+function cacheSet(key, value){
+  try{ localStorage.setItem(key, JSON.stringify({ t: Date.now(), v: value })); }
+  catch(e){ /* storage full — just skip caching */ }
+}
+function cacheChannelSet(channel, list){
+  cacheSet('tstv_7tv2_ch_' + channel, list);
+  try{
+    const idx = JSON.parse(localStorage.getItem(EMOTE_INDEX_KEY) || '[]').filter(c => c !== channel);
+    idx.push(channel);
+    while(idx.length > EMOTE_CACHE_MAX_CHANNELS) localStorage.removeItem('tstv_7tv2_ch_' + idx.shift());
+    localStorage.setItem(EMOTE_INDEX_KEY, JSON.stringify(idx));
+  }catch(e){ /* not critical */ }
 }
 
-function addSevenTVEmote(e){
-  try{
-    const host = e.data.host;
-    const file = host.files.find(f=>f.name.endsWith('.webp')) || host.files[0];
-    const url = 'https:' + host.url + '/' + file.name;
-    emoteMap.set(e.name, url);
-  }catch(err){}
+// Reduce 7TV's large response to just what we use: [[name, animatedUrl, stillUrl-or-null], ...]
+function compactSevenTV(emotes){
+  const out = [];
+  (emotes || []).forEach(e => {
+    try{
+      const host = e.data.host;
+      const file = host.files.find(f => f.name.endsWith('.webp')) || host.files[0];
+      const base = 'https:' + host.url + '/';
+      out.push([e.name, base + file.name, file.static_name ? base + file.static_name : null]);
+    }catch(err){}
+  });
+  return out;
+}
+
+async function loadSevenTV(channel){
+  emoteMap = new Map();
+
+  let globalList = cacheGet('tstv_7tv2_global');
+  if(!globalList){
+    try{
+      const g = await fetch('https://7tv.io/v3/emote-sets/global').then(r=>r.json());
+      globalList = compactSevenTV(g.emotes);
+      if(globalList.length) cacheSet('tstv_7tv2_global', globalList);
+    }catch(e){ console.warn('7TV global load failed', e); globalList = []; }
+  }
+  globalList.forEach(([n, u, st]) => emoteMap.set(n, { u, s: st }));
+
+  let channelList = cacheGet('tstv_7tv2_ch_' + channel);
+  if(!channelList){
+    channelList = [];
+    try{
+      const userRes = await fetch('https://api.ivr.fi/v2/twitch/user?login=' + encodeURIComponent(channel)).then(r=>r.json());
+      const twitchId = Array.isArray(userRes) ? userRes[0]?.id : userRes?.id;
+      if(twitchId){
+        const stv = await fetch('https://7tv.io/v3/users/twitch/' + twitchId).then(r=> r.ok ? r.json() : null);
+        if(stv){
+          channelList = compactSevenTV(stv?.emote_set?.emotes);
+          cacheChannelSet(channel, channelList);
+        }
+      }
+    }catch(e){ console.warn('7TV channel load failed', e); }
+  }
+  channelList.forEach(([n, u, st]) => emoteMap.set(n, { u, s: st }));
+
+  setStatus(`Loaded ${emoteMap.size} 7TV emotes for #${channel}. Connecting to chat…`);
 }
 
 // ---- Emote images: only animate while actually visible on screen ----
@@ -412,11 +559,12 @@ function makeEmoteImg(url, alt){
 
 // ---- Twitch native emote image from id ----
 function twitchEmoteUrl(id){
-  return `https://static-cdn.jtvnw.net/emoticons/v2/${id}/default/dark/2.0`;
+  // 'static' is the still-image version of an emote; 'default' animates when the emote is animated.
+  return `https://static-cdn.jtvnw.net/emoticons/v2/${id}/${isSaver() ? 'static' : 'default'}/dark/2.0`;
 }
 
 // ---- Render a chat message, applying Twitch tag emotes then 7TV word emotes ----
-function renderMessage(text, emotesTag, displayName, color){
+function buildMessageNode(text, emotesTag, displayName, color){
   const wrap = document.createElement('div');
   wrap.className = 'msg';
 
@@ -449,7 +597,8 @@ function renderMessage(text, emotesTag, displayName, color){
     const words = str.split(/(\s+)/);
     words.forEach(w=>{
       if(emoteMap.has(w)){
-        frag.appendChild(makeEmoteImg(emoteMap.get(w), w));
+        const em = emoteMap.get(w);
+        frag.appendChild(makeEmoteImg(isSaver() && em.s ? em.s : em.u, w));
       } else if(w.length){
         frag.appendChild(document.createTextNode(w));
       }
@@ -466,8 +615,11 @@ function renderMessage(text, emotesTag, displayName, color){
 
   frag.insertBefore(document.createTextNode(' '), frag.firstChild);
   wrap.appendChild(frag);
-  chatEl.appendChild(wrap);
-  trimAndScroll();
+  return wrap;
+}
+
+function renderMessage(text, emotesTag, displayName, color){
+  queueChat({ text, emotesTag, displayName, color });
 }
 
 // ---- IRC ----
@@ -549,11 +701,31 @@ function sendChatMessage(text){
   // Twitch's IRC doesn't echo your own sent messages back to you — render
   // it locally right away instead of waiting for something that never arrives.
   renderMessage(text, null, localStorage.getItem(LS.login) || 'You', '#9147ff');
+  flushChat(); // your own message shows instantly, not after the batch delay
 }
 
+// ---- Pausing chat when nobody can see it ----
+// Closing the connection on purpose: ws is cleared FIRST, so the close handler in
+// connectIRC() knows it was intentional and doesn't try to reconnect.
+function disconnectChat(){
+  const s = ws;
+  ws = null;
+  if(s){ try{ s.close(); }catch(e){} }
+  pendingChat = [];
+  if(flushTimer){ clearTimeout(flushTimer); flushTimer = null; }
+}
+function reconnectChat(){
+  if(!currentChannel || ws) return;
+  clearChat();
+  connectIRC(currentChannel);
+  addSystemMsg('Chat resumed.');
+}
+
+
 // ---- Video (Twitch embed, parent = actual hosting domain) ----
-function loadVideo(channel){
-  videoWrap.innerHTML = '';
+let videoLoadId = 0;
+
+function mountPlainVideo(channel){
   const iframe = document.createElement('iframe');
   const parent = window.location.hostname || 'localhost';
   iframe.src = `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=${parent}`;
@@ -562,14 +734,129 @@ function loadVideo(channel){
   videoWrap.appendChild(iframe);
 }
 
+function loadVideo(channel){
+  const id = ++videoLoadId; // a newer call always wins over one still waiting on something
+  videoWrap.innerHTML = '';
+  if(isSaver()) loadVideoCapped(channel, id);
+  else mountPlainVideo(channel);
+}
+
+// ---- Battery saver: cap the video quality ----
+// Decoding video is the biggest battery cost by far. Twitch's own player library lets us ask
+// for a lower quality; it's loaded only when saver is on. If it can't be loaded, or the stream
+// has no lower quality, the video just plays normally and the status line says so.
+let twitchLibPromise = null;
+function loadTwitchLib(){
+  if(window.Twitch && window.Twitch.Player) return Promise.resolve(true);
+  if(!twitchLibPromise){
+    twitchLibPromise = new Promise(resolve => {
+      let settled = false;
+      const finish = ok => { if(settled) return; settled = true; if(!ok) twitchLibPromise = null; resolve(ok); };
+      const sc = document.createElement('script');
+      sc.src = 'https://player.twitch.tv/js/embed/v1.js';
+      sc.onload = () => finish(!!(window.Twitch && window.Twitch.Player));
+      sc.onerror = () => finish(false);
+      setTimeout(() => finish(false), 6000); // don't leave the video area blank if the script hangs
+      document.head.appendChild(sc);
+    });
+  }
+  return twitchLibPromise;
+}
+
+// From the qualities a stream offers, choose the best one at or below 480p (a good fit for a
+// small screen). Returns null when there's nothing lower than the source to choose.
+function pickSaverQuality(list){
+  const cands = [];
+  (list || []).forEach(q => {
+    const id = typeof q === 'string' ? q : (q && (q.group || q.name));
+    const label = typeof q === 'string' ? q : (q && (q.name || q.group));
+    if(!id || String(id) === 'chunked') return;               // 'chunked' is the source quality
+    const text = String(label || '') + ' ' + String(id);
+    if(/audio|auto/i.test(text)) return;                        // audio-only / automatic aren't a lower video
+    const m = /(\d{3,4})p(\d{2,3})?/.exec(text);
+    if(!m) return;
+    cands.push({ id: String(id), h: +m[1], fps: m[2] ? +m[2] : 30 });
+  });
+  if(!cands.length) return null;
+  const low = cands.filter(c => c.h <= 480);
+  const pool = low.length ? low : cands;
+  pool.sort((a, b) => low.length ? (b.h - a.h || a.fps - b.fps) : (a.h - b.h || a.fps - b.fps));
+  return pool[0].id;
+}
+
+async function loadVideoCapped(channel, id){
+  const ok = await loadTwitchLib();
+  if(id !== videoLoadId) return;
+  if(!ok){
+    mountPlainVideo(channel);
+    setStatus("Battery saver: couldn't load Twitch's player controls, so video quality is unchanged.");
+    return;
+  }
+  const holder = document.createElement('div');
+  holder.id = 'twitchPlayerHolder';
+  holder.style.cssText = 'position:absolute;inset:0';
+  videoWrap.appendChild(holder);
+
+  let player;
+  try{
+    player = new Twitch.Player('twitchPlayerHolder', {
+      channel, parent: [window.location.hostname || 'localhost'],
+      width: '100%', height: '100%', autoplay: true, muted: false,
+    });
+  }catch(e){
+    videoWrap.innerHTML = '';
+    mountPlainVideo(channel);
+    setStatus("Battery saver: couldn't start Twitch's player controls, so video quality is unchanged.");
+    return;
+  }
+  const allowAutoplay = () => {
+    const f = holder.querySelector('iframe');
+    if(!f) return false;
+    f.allow = 'autoplay; fullscreen'; // same permission the plain player gets, so sound autoplay still works
+    return true;
+  };
+  if(!allowAutoplay()){
+    const mo = new MutationObserver(() => { if(allowAutoplay()) mo.disconnect(); });
+    mo.observe(holder, { childList: true });
+  }
+
+  let done = false, tries = 0;
+  const attempt = () => {
+    if(done || id !== videoLoadId) return;
+    tries++;
+    try{
+      const pick = pickSaverQuality(player.getQualities());
+      if(pick){
+        player.setQuality(pick);
+        done = true;
+        setStatus('Battery saver: video capped at ' + pick + '.');
+        return;
+      }
+    }catch(e){ /* qualities aren't known yet — try again shortly */ }
+    if(tries >= 5){ done = true; setStatus('Battery saver: this stream has no lower video quality to switch to.'); }
+  };
+  // The list of qualities only becomes known once the player has loaded, so try at a few moments.
+  const P = Twitch.Player;
+  try{ player.addEventListener(P.READY || 'ready', attempt); }catch(e){}
+  try{ player.addEventListener(P.PLAYING || 'playing', attempt); }catch(e){}
+  [1500, 3500, 6000, 9000].forEach(ms => setTimeout(attempt, ms));
+}
+
 async function watchChannel(channel){
   channel = (channel || '').trim().toLowerCase().replace(/^#/, '');
   if(!channel) return;
   currentChannel = channel;
   if(localStorage.getItem(LS.dualChannel)) localStorage.setItem(LS.dualChannel, channel); // keep a dual-screen partner window in sync, if active
-  chatEl.innerHTML = '';
-  setStatus('Loading 7TV emotes for #' + channel + '…');
+  clearChat();
   if(!document.body.classList.contains('role-chat')) loadVideo(channel); // chat-only screen never shows video — skip it to save battery
+  if(document.body.classList.contains('role-video')){
+    // Top screen in dual mode: chat lives on the other screen, so don't connect or load emotes
+    // here — just tell the bottom screen to switch to the new channel too.
+    setStatus('Switched to #' + channel + ' — the bottom screen chat is switching too.');
+    triggerNative('dual-screen-update', channel, { saver: isSaver() ? '1' : '0' });
+    return;
+  }
+  setStatus('Loading 7TV emotes for #' + channel + '…');
   await loadSevenTV(channel);
   connectIRC(channel);
   addSystemMsg(`Joined #${channel}. ${emoteMap.size} 7TV emotes active.`);
@@ -608,6 +895,7 @@ async function toggleDualScreen(){
     triggerNative('dual-screen-off');
     setStatus('Dual-screen mode off.');
     if(currentChannel) loadVideo(currentChannel); // re-fit video cleanly to the normal (narrower) shape
+    reconnectChat(); // chat was paused on this screen while the other screen showed it
     return;
   }
 
@@ -618,11 +906,15 @@ async function toggleDualScreen(){
   localStorage.setItem(LS.dualChannel, currentChannel);
   applyDualScreenLayout();
   collapseHeader();
+  // The chat pane is hidden on this screen in dual mode (the other screen shows it), so
+  // stop receiving and rendering every message here for nobody to see.
+  if(document.body.classList.contains('role-video')) disconnectChat();
   loadVideo(currentChannel); // re-fit video cleanly to the new full-width shape — no letterboxing
   triggerNative('dual-screen-on', currentChannel, {
     token: localStorage.getItem(LS.token),
     login: localStorage.getItem(LS.login),
     loginName: localStorage.getItem(LS.loginName),
+    saver: isSaver() ? '1' : '0',
   });
   setStatus('Dual-screen mode on — chat should appear on the other screen automatically. Tap Dual Screen again to turn it off.');
 }
@@ -646,11 +938,57 @@ function triggerNative(action, channel, extras){
 }
 dualScreenBtn.addEventListener('click', toggleDualScreen);
 
-// On the bottom (chat-only) screen, native code shows what's being typed on the top
-// screen (the keyboard covers most of this one). window.ThorNative only exists there,
-// so all of this is a harmless no-op on the main screen.
+function updateSaverButton(){
+  saverBtn.classList.toggle('on', isSaver());
+  saverLabel.textContent = isSaver() ? 'Saver: On' : 'Saver: Off';
+}
+function setSaver(on){
+  localStorage.setItem(SAVER_KEY, on ? '1' : '0');
+  updateSaverButton();
+  trimAndScroll(); // apply the smaller chat size right away
+  setStatus(on ? 'Battery saver on.' : 'Battery saver off.');
+  if(currentChannel){
+    loadVideo(currentChannel); // applies (or lifts) the video quality cap
+    // If the bottom screen is showing chat, let it know too.
+    if(document.body.classList.contains('role-video')) triggerNative('dual-screen-update', currentChannel, { saver: on ? '1' : '0' });
+  }
+}
+saverBtn.addEventListener('click', () => setSaver(!isSaver()));
+
+// Message preview while typing (the keyboard covers much of the screen you're typing on):
+//  - Bottom screen in dual mode: native code shows the card on the top screen (window.ThorNative
+//    only exists in that window).
+//  - Single-screen mode: this page draws the same card itself, at the top of the screen.
 function notifyDraft(t){
-  try{ if(window.ThorNative && ThorNative.draft) ThorNative.draft(t || ''); }catch(e){ /* not on the chat-only screen */ }
+  if(window.ThorNative && ThorNative.draft){
+    try{ ThorNative.draft(t || ''); }catch(e){ /* bridge unavailable */ }
+    return;
+  }
+  localPreview(t || '');
+}
+
+function positionPreview(){
+  const vv = window.visualViewport;
+  // when the keyboard opens the visible area can shift — keep the card pinned to its top edge
+  draftPreview.style.top = (28 + (vv ? vv.offsetTop : 0)) + 'px';
+}
+function localPreview(text){
+  if(CHAT_ONLY) return;
+  if(!text || !text.trim()){ draftPreview.classList.remove('show'); return; }
+  dpText.textContent = text;
+  const caret = document.createElement('span');
+  caret.className = 'caret';
+  caret.textContent = '\u258D';
+  dpText.appendChild(caret);
+  dpCount.textContent = text.length + ' / 500';
+  dpCount.className = 'dp-count' + (text.length > 500 ? ' over' : (text.length > 450 ? ' warn' : ''));
+  positionPreview();
+  draftPreview.classList.add('show');
+}
+if(window.visualViewport){
+  const reposition = () => { if(draftPreview.classList.contains('show')) positionPreview(); };
+  visualViewport.addEventListener('resize', reposition);
+  visualViewport.addEventListener('scroll', reposition);
 }
 function askPreviewPermissionOnce(){
   try{
@@ -683,6 +1021,9 @@ function submitChatMessage(){
 }
 chatSendSubmit.addEventListener('click', submitChatMessage);
 chatSendInput.addEventListener('input', () => notifyDraft(chatSendInput.value));
+// Single-screen only: hide the card when the keyboard goes away, bring it back when typing resumes.
+chatSendInput.addEventListener('blur', () => { if(!window.ThorNative) localPreview(''); });
+chatSendInput.addEventListener('focus', () => { if(!window.ThorNative && chatSendInput.value) localPreview(chatSendInput.value); });
 chatSendInput.addEventListener('keydown', e => {
   if(e.key === 'Enter') submitChatMessage();
   if(e.key === 'Escape'){ chatSendBar.classList.add('hidden'); notifyDraft(''); }
@@ -696,8 +1037,9 @@ window.addEventListener('resize', () => {
 if(location.search.includes('error=')) history.replaceState(null, '', location.pathname); // clear stale error params
 
 updateSignInButton();
+updateSaverButton();
 handleOAuthRedirect();
-if(localStorage.getItem(LS.token)) loadFollowedLive();
+if(!CHAT_ONLY && localStorage.getItem(LS.token)) loadFollowedLive();
 
 // The app-in-a-second-display Presentation loads with ?screen=chat&channel=xyz
 // — native code passes the channel directly since this WebView doesn't share
@@ -707,6 +1049,7 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   collapseHeader(); // full-bleed chat view — no controls needed here
   const ch = new URLSearchParams(location.search).get('channel');
   let chatOnlyStarted = false;
+  let latestChannel = null; // set if the top screen switches channel before the session hand-off arrives
 
   // Called by native code once this page has loaded, handing over the signed-in
   // session from the main window (this WebView has its own separate storage).
@@ -724,17 +1067,29 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
       localStorage.removeItem(LS.login);
       localStorage.removeItem(LS.loginName);
     }
-    watchChannel(channel || ch);
+    watchChannel(latestChannel || channel || ch);
+  };
+
+  // Called by native code when the top screen changes channel (or battery saver) while in
+  // dual-screen mode, so this chat follows along.
+  window.__thorstreamUpdate = function(u){
+    if(!u) return;
+    if(typeof u.saver === 'boolean') bottomSaver = u.saver;
+    if(u.channel){
+      latestChannel = u.channel;
+      if(chatOnlyStarted && u.channel !== currentChannel) watchChannel(u.channel);
+    }
+    trimAndScroll();
   };
 
   // Fallback: if the session never arrives (e.g. an older app build), still show chat, read-only.
   setTimeout(() => {
-    if(!chatOnlyStarted && ch){
+    if(!chatOnlyStarted && (latestChannel || ch)){
       chatOnlyStarted = true;
       localStorage.removeItem(LS.token);
       localStorage.removeItem(LS.login);
       localStorage.removeItem(LS.loginName);
-      watchChannel(ch);
+      watchChannel(latestChannel || ch);
     }
   }, 3000);
 }
@@ -743,7 +1098,29 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
 // it saves the token to shared localStorage itself. When you switch back
 // here, just re-read that instead of waiting for a redirect that never
 // lands in this particular window.
+// If the app sits in the background, stop receiving chat after a while (a busy channel is a
+// constant stream of network + CPU wakeups). The short delay avoids reconnecting on quick app
+// switches. The bottom chat-only screen manages itself and is left alone here.
+const HIDDEN_DISCONNECT_MS = 30000;
+let hiddenTimer = null;
+let chatSuspendedWhileHidden = false;
+function handleVisibilityForChat(){
+  if(CHAT_ONLY) return;
+  if(document.hidden){
+    clearTimeout(hiddenTimer);
+    hiddenTimer = setTimeout(() => {
+      if(document.hidden && ws){ chatSuspendedWhileHidden = true; disconnectChat(); }
+    }, isSaver() ? Math.min(HIDDEN_DISCONNECT_MS, 10000) : HIDDEN_DISCONNECT_MS);
+  } else {
+    clearTimeout(hiddenTimer);
+    if(chatSuspendedWhileHidden){
+      chatSuspendedWhileHidden = false;
+      if(!document.body.classList.contains('role-video')) reconnectChat();
+    }
+  }
+}
 document.addEventListener('visibilitychange', () => {
+  handleVisibilityForChat();
   if(document.visibilityState === 'visible' && localStorage.getItem(LS.pendingRefresh)){
     localStorage.removeItem(LS.pendingRefresh);
     if(!localStorage.getItem(LS.login)){ location.reload(); return; }
@@ -765,17 +1142,15 @@ window.addEventListener('focus', () => {
 // changes, so a plain page-load listener alone would miss it.
 window.addEventListener('hashchange', () => { handleOAuthRedirect(); });
 
-// Belt-and-suspenders: don't rely solely on focus/visibilitychange firing
-// when Android resumes this app after the Chrome sign-in hand-off — some
-// resume paths don't reliably trigger those events in this context. Poll
-// for the flag instead, so the reload happens regardless.
-const pendingRefreshPoll = setInterval(() => {
-  if(localStorage.getItem(LS.pendingRefresh)){
+// Belt-and-suspenders for the Chrome sign-in hand-off: when the sign-in tab writes the
+// "pending refresh" flag, this window is told right away by the browser's storage event.
+// (This replaces a timer that woke the CPU every 1.2 seconds just to check for it.)
+window.addEventListener('storage', e => {
+  if(e.key === LS.pendingRefresh && e.newValue){
     localStorage.removeItem(LS.pendingRefresh);
-    if(!localStorage.getItem(LS.login)) location.reload(); // only reload if not already signed in
+    if(!localStorage.getItem(LS.login)) location.reload();
   }
-}, 1200);
-setTimeout(() => clearInterval(pendingRefreshPoll), 2 * 60 * 1000); // only useful briefly after Sign In — no need to keep waking up forever
+});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
