@@ -219,8 +219,8 @@ body.role-video #chat{display:none}
 body.role-video #videoWrap{right:0}
 body.role-chat #videoWrap{display:none}
 body.role-chat #chat{left:0; width:auto}
-body.role-chat #revealTab{display:none !important}
-body.role-chat header{display:none !important}
+body.no-header-screen #revealTab{display:none !important}
+body.no-header-screen header{display:none !important}
 
 /* ---- Tower Mode ----
    The Thor is stood on its right edge: the small (bottom) screen is now on
@@ -229,12 +229,12 @@ body.role-chat header{display:none !important}
    standing beside the propped-up device, instead of resizing anything
    (resizing is what breaks the video — see the dual-screen notes above). */
 body.tower-video #videoWrap{
-  position:fixed; top:50%; left:50%; width:100vh; height:100vw; z-index:1;
-  transform:translate(-50%, -50%) rotate(90deg);
+  position:fixed; top:50%; left:50%; width:100vh; height:100vw; right:auto; bottom:auto; z-index:1;
+  transform:translate(-50%, -50%) rotate(-90deg);
 }
 body.tower-chat #chat{
   position:fixed; top:50%; left:50%; width:100vh; height:100vw; right:auto; bottom:auto; z-index:1;
-  transform:translate(-50%, -50%) rotate(90deg);
+  transform:translate(-50%, -50%) rotate(-90deg);
 }
 
 /* Only stack for genuinely narrow, tall (phone-portrait style) windows —
@@ -311,14 +311,14 @@ body.tower-chat #chat{
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
-  New messages
+  <span id="scrollResumeText">New messages</span>
 </button>
 
 <div id="settingsModal" class="modal-overlay hidden">
   <div class="modal-box">
     <h2>Settings</h2>
     <label class="s-label">Chat font size <span id="fontSizeValue">14px</span></label>
-    <input id="fontSizeSlider" type="range" min="11" max="22" step="1" value="14">
+    <input id="fontSizeSlider" type="range" min="8" max="22" step="1" value="14">
     <div id="fontPreview" class="font-preview">Example: PepperoneE: this is what chat will look like</div>
     <label class="s-row"><input type="checkbox" id="showSubBadges" checked> Show subscriber badges</label>
     <label class="s-row"><input type="checkbox" id="showBitBadges" checked> Show bit (cheer) badges</label>
@@ -412,6 +412,7 @@ const LS = {
 
 // True only in the bottom-screen chat window (loaded by native code with ?screen=chat).
 const CHAT_ONLY = new URLSearchParams(location.search).get('screen') === 'chat';
+const SECOND_SCREEN = CHAT_ONLY || new URLSearchParams(location.search).get('screen') === 'video'; // true for EITHER native-loaded second-screen case
 
 // ---- Battery saver ----
 // When on: video is capped at a lower quality (the biggest saving), emotes are shown as
@@ -419,7 +420,7 @@ const CHAT_ONLY = new URLSearchParams(location.search).get('screen') === 'chat';
 // The main window remembers the choice; the bottom chat-only window is told by native code.
 const SAVER_KEY = 'tstv_saver';
 let bottomSaver = new URLSearchParams(location.search).get('saver') === '1';
-function isSaver(){ return CHAT_ONLY ? bottomSaver : localStorage.getItem(SAVER_KEY) === '1'; }
+function isSaver(){ return SECOND_SCREEN ? bottomSaver : localStorage.getItem(SAVER_KEY) === '1'; }
 function chatMax(){ return isSaver() ? 20 : 30; }
 function chatFlushMs(){ return isSaver() ? 1000 : 250; }
 
@@ -501,7 +502,7 @@ let lastFollowedFetch = 0;
 const FOLLOWED_MIN_MS = 60 * 1000;
 
 async function loadFollowedLive(force){
-  if(CHAT_ONLY) return; // the bottom chat-only screen has no followed list
+  if(SECOND_SCREEN) return; // neither native-loaded second screen has a followed list
   const token = localStorage.getItem(LS.token);
   if(!token) return;
   const now = Date.now();
@@ -556,6 +557,10 @@ let flushTimer = null;
 function queueChat(item){
   pendingChat.push(item);
   if(pendingChat.length > chatMax()) pendingChat.splice(0, pendingChat.length - chatMax());
+  if(autoScrollPaused){
+    updateScrollResumeCount(); // keep the "N new messages" count live while paused
+    return; // don't render anything new until the user taps Resume
+  }
   if(!flushTimer) flushTimer = setTimeout(flushChat, chatFlushMs());
 }
 
@@ -1030,15 +1035,19 @@ async function watchChannel(channel){
 // that screen's relevant pane, full-bleed. Open the app on both screens
 // (drag one instance to each) and each configures itself automatically,
 // staying in sync on which channel via shared localStorage.
-function detectScreenRole(){
+function detectScreenRole(tower){
   const forced = new URLSearchParams(location.search).get('screen');
-  if(forced === 'chat' || forced === 'video') return forced;
+  if(forced === 'chat' || forced === 'video') return forced; // the second screen is always told explicitly by native code
+  // This is the main/top window deciding its own role. Normal dual mode: main window shows
+  // video, the small second screen shows chat. Tower mode inverts this — the small screen
+  // becomes the video screen (rotated upright), so the main window shows chat instead.
+  if(tower) return 'chat';
   const ratio = window.innerWidth / window.innerHeight;
   return ratio > 1.4 ? 'video' : 'chat';
 }
 
 function applyDualScreenLayout(tower){
-  const role = detectScreenRole();
+  const role = detectScreenRole(tower);
   document.body.classList.remove('role-video', 'role-chat', 'tower-video', 'tower-chat');
   document.body.classList.add(role === 'video' ? 'role-video' : 'role-chat');
   if(tower) document.body.classList.add(role === 'video' ? 'tower-video' : 'tower-chat');
@@ -1271,10 +1280,17 @@ checkUpdateBtn.addEventListener('click', async () => {
 function nearChatBottom(){
   return chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 40;
 }
+const scrollResumeText = $('#scrollResumeText');
+function updateScrollResumeCount(){
+  const n = pendingChat.length;
+  scrollResumeText.textContent = n > 0 ? (n + (n === 1 ? ' new message' : ' new messages')) : 'New messages';
+}
+
 chatEl.addEventListener('scroll', () => {
   const atBottom = nearChatBottom();
   if(!atBottom && !autoScrollPaused){
     autoScrollPaused = true;
+    updateScrollResumeCount();
     scrollResumeBtn.classList.remove('hidden');
   } else if(atBottom && autoScrollPaused){
     autoScrollPaused = false;
@@ -1283,7 +1299,9 @@ chatEl.addEventListener('scroll', () => {
 });
 scrollResumeBtn.addEventListener('click', () => {
   haptic();
-  autoScrollPaused = false;
+  autoScrollPaused = false; // clear the pause first so flushChat()'s own auto-scroll actually runs
+  flushChat(); // render everything that built up while paused
+  updateScrollResumeCount(); // resets the text back to default now that pendingChat is empty
   scrollResumeBtn.classList.add('hidden');
   chatEl.scrollTop = chatEl.scrollHeight;
 });
@@ -1300,7 +1318,7 @@ updateSignInButton();
 updateSaverButton();
 if(localStorage.getItem(LS.login)) setStatus(''); // already signed in — the default "sign in to see who's live" banner isn't needed
 handleOAuthRedirect();
-if(!CHAT_ONLY && localStorage.getItem(LS.token)) loadFollowedLive();
+if(!SECOND_SCREEN && localStorage.getItem(LS.token)) loadFollowedLive();
 
 // The app-in-a-second-display Presentation loads with ?screen=chat&channel=xyz
 // — native code passes the channel directly since this WebView doesn't share
@@ -1309,6 +1327,7 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   const chatOnlyTower = new URLSearchParams(location.search).get('tower') === '1';
   applyDualScreenLayout(chatOnlyTower);
   collapseHeader(); // full-bleed chat view — no controls needed here
+  document.body.classList.add('no-header-screen'); // this is the isolated native screen, not the main window — unlike role-chat, this is never also true for the main window
   const ch = new URLSearchParams(location.search).get('channel');
   let chatOnlyStarted = false;
   let latestChannel = null; // set if the top screen switches channel before the session hand-off arrives
@@ -1354,6 +1373,25 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
       watchChannel(latestChannel || ch);
     }
   }, 3000);
+} else if(new URLSearchParams(location.search).get('screen') === 'video'){
+  // Tower Mode: the small second screen shows video instead of chat. Much simpler than the
+  // chat case — video playback needs no sign-in session, so it can start immediately rather
+  // than waiting for a native hand-off.
+  const towerFlagForVideo = new URLSearchParams(location.search).get('tower') === '1';
+  applyDualScreenLayout(towerFlagForVideo);
+  collapseHeader();
+  document.body.classList.add('no-header-screen'); // same reasoning as the chat case above
+  const videoOnlyChannel = new URLSearchParams(location.search).get('channel');
+  if(videoOnlyChannel){ currentChannel = videoOnlyChannel; loadVideo(videoOnlyChannel); }
+
+  // Stay in sync if the main (chat) window switches channels later.
+  window.__thorstreamUpdate = function(u){
+    if(!u || !u.channel) return;
+    if(u.channel !== currentChannel){
+      currentChannel = u.channel;
+      loadVideo(u.channel);
+    }
+  };
 }
 
 // The Twitch sign-in tab is a separate window from this app (see signIn()) —
