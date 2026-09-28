@@ -646,23 +646,46 @@ function triggerNative(action, channel, extras){
 }
 dualScreenBtn.addEventListener('click', toggleDualScreen);
 
+// On the bottom (chat-only) screen, native code shows what's being typed on the top
+// screen (the keyboard covers most of this one). window.ThorNative only exists there,
+// so all of this is a harmless no-op on the main screen.
+function notifyDraft(t){
+  try{ if(window.ThorNative && ThorNative.draft) ThorNative.draft(t || ''); }catch(e){ /* not on the chat-only screen */ }
+}
+function askPreviewPermissionOnce(){
+  try{
+    if(window.ThorNative && !localStorage.getItem('tstv_preview_asked')){
+      localStorage.setItem('tstv_preview_asked', '1'); // only ever ask once
+      if(!ThorNative.canPreview()) ThorNative.requestPreviewPermission();
+    }
+  }catch(e){ /* not on the chat-only screen */ }
+}
+
 chatSendBtn.addEventListener('click', () => {
   if(!localStorage.getItem(LS.token)){
     setStatus('Sign in with Twitch to send messages.');
     return;
   }
   chatSendBar.classList.toggle('hidden');
-  if(!chatSendBar.classList.contains('hidden')) chatSendInput.focus();
+  if(!chatSendBar.classList.contains('hidden')){
+    chatSendInput.focus();
+    askPreviewPermissionOnce();
+    notifyDraft(chatSendInput.value);
+  } else {
+    notifyDraft('');
+  }
 });
 function submitChatMessage(){
   sendChatMessage(chatSendInput.value);
   chatSendInput.value = '';
   chatSendBar.classList.add('hidden');
+  notifyDraft('');
 }
 chatSendSubmit.addEventListener('click', submitChatMessage);
+chatSendInput.addEventListener('input', () => notifyDraft(chatSendInput.value));
 chatSendInput.addEventListener('keydown', e => {
   if(e.key === 'Enter') submitChatMessage();
-  if(e.key === 'Escape') chatSendBar.classList.add('hidden');
+  if(e.key === 'Escape'){ chatSendBar.classList.add('hidden'); notifyDraft(''); }
 });
 window.addEventListener('resize', () => {
   if(document.body.classList.contains('role-video') || document.body.classList.contains('role-chat')){
