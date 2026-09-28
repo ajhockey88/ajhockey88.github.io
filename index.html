@@ -542,6 +542,9 @@ function sendChatMessage(text){
     return;
   }
   ws.send('PRIVMSG #' + currentChannel + ' :' + text);
+  // Twitch's IRC doesn't echo your own sent messages back to you — render
+  // it locally right away instead of waiting for something that never arrives.
+  renderMessage(text, null, localStorage.getItem(LS.login) || 'You', '#9147ff');
 }
 
 // ---- Video (Twitch embed, parent = actual hosting domain) ----
