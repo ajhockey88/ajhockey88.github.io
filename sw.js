@@ -1,4 +1,4 @@
-const CACHE = 'thorstream-v2'; // bumped so devices drop their stale v1 cache
+const CACHE = 'thorstream-v3'; // bumped so devices drop the old cache, which could grow without limit
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -13,21 +13,32 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// Network-first for the app's own files, so a new deploy shows up immediately
-// instead of a stale cached copy sticking around — falls back to cache only
-// if the network request fails (e.g. genuinely offline). All Twitch/7TV/API
-// calls are left untouched, going straight to the network as before.
+// Cache entries are keyed by path only, ignoring any ?query. Otherwise every distinct URL
+// (e.g. the bottom screen's ?screen=chat&v=<timestamp>) would get its own copy stored
+// forever, and the cache would just keep growing.
+function cacheKey(url){ return url.origin + url.pathname; }
+
+// Network-first for the app's own files. { cache: 'no-cache' } makes the browser check with
+// the server every time (a tiny "unchanged" reply if nothing changed) instead of trusting a
+// saved copy for up to 10 minutes — so a new deploy shows up right away, without needing to
+// clear Chrome's cache. Falls back to the saved copy only when genuinely offline.
+// All Twitch/7TV/API calls are left alone and go straight to the network.
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  if (url.origin === self.location.origin) {
-    e.respondWith(
-      fetch(e.request)
-        .then(res => {
-          const resClone = res.clone(); // clone immediately, before any async gap
-          caches.open(CACHE).then(c => c.put(e.request, resClone));
-          return res;
-        })
-        .catch(() => caches.match(e.request))
-    );
-  }
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  const key = cacheKey(url);
+  e.respondWith(
+    fetch(req, { cache: 'no-cache' })
+      .then(res => {
+        if (res.ok && res.type === 'basic') {
+          const copy = res.clone(); // clone immediately, before any async gap
+          caches.open(CACHE).then(c => c.put(key, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(key))
+  );
 });
