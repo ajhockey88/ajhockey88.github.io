@@ -56,15 +56,19 @@ header.collapsed{
 #revealTab.show{display:block}
 
 #chatSendBtn{
-  position:absolute; right:16px; bottom:16px; z-index:15;
-  width:44px; height:44px; border-radius:50%; padding:0;
+  position:absolute; right:14px; bottom:14px; z-index:15;
+  width:34px; height:34px; border-radius:50%; padding:0;
   display:flex; align-items:center; justify-content:center;
   background:var(--accent); color:#fff; border:none;
-  box-shadow:0 2px 10px rgba(0,0,0,.4);
+  box-shadow:0 2px 8px rgba(0,0,0,.4);
 }
+#chatSendBtn svg{width:15px; height:15px}
 #chatSendBtn:active{background:var(--accent2)}
 body.role-video #chatSendBtn, body.role-video #chatSendBar{display:none}
+/* Chat-only (bottom) screen: hidden unless a signed-in session was handed over from the main window */
 body.role-chat #chatSendBtn, body.role-chat #chatSendBar{display:none}
+body.role-chat.can-send #chatSendBtn{display:flex}
+body.role-chat.can-send #chatSendBar:not(.hidden){display:flex}
 
 #chatSendBar{
   position:absolute; right:16px; bottom:16px; left:16px; z-index:16;
@@ -565,7 +569,7 @@ async function watchChannel(channel){
   if(localStorage.getItem(LS.dualChannel)) localStorage.setItem(LS.dualChannel, channel); // keep a dual-screen partner window in sync, if active
   chatEl.innerHTML = '';
   setStatus('Loading 7TV emotes for #' + channel + '…');
-  loadVideo(channel);
+  if(!document.body.classList.contains('role-chat')) loadVideo(channel); // chat-only screen never shows video — skip it to save battery
   await loadSevenTV(channel);
   connectIRC(channel);
   addSystemMsg(`Joined #${channel}. ${emoteMap.size} 7TV emotes active.`);
@@ -615,7 +619,11 @@ async function toggleDualScreen(){
   applyDualScreenLayout();
   collapseHeader();
   loadVideo(currentChannel); // re-fit video cleanly to the new full-width shape — no letterboxing
-  triggerNative('dual-screen-on', currentChannel);
+  triggerNative('dual-screen-on', currentChannel, {
+    token: localStorage.getItem(LS.token),
+    login: localStorage.getItem(LS.login),
+    loginName: localStorage.getItem(LS.loginName),
+  });
   setStatus('Dual-screen mode on — chat should appear on the other screen automatically. Tap Dual Screen again to turn it off.');
 }
 
@@ -624,10 +632,13 @@ async function toggleDualScreen(){
 // physical display. Wrapped in try/catch since this scheme only resolves
 // inside the installed app itself — harmless no-op anywhere else (e.g. if
 // you're testing this page in a plain desktop browser).
-function triggerNative(action, channel){
+function triggerNative(action, channel, extras){
   try{
+    const parts = [];
+    if(channel) parts.push('channel=' + encodeURIComponent(channel));
+    if(extras) Object.keys(extras).forEach(k => { if(extras[k]) parts.push(k + '=' + encodeURIComponent(extras[k])); });
     const a = document.createElement('a');
-    a.href = 'thorstream://' + action + (channel ? ('?channel=' + encodeURIComponent(channel)) : '');
+    a.href = 'thorstream://' + action + (parts.length ? ('?' + parts.join('&')) : '');
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -672,7 +683,37 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   applyDualScreenLayout();
   collapseHeader(); // full-bleed chat view — no controls needed here
   const ch = new URLSearchParams(location.search).get('channel');
-  if(ch) watchChannel(ch);
+  let chatOnlyStarted = false;
+
+  // Called by native code once this page has loaded, handing over the signed-in
+  // session from the main window (this WebView has its own separate storage).
+  window.__thorstreamStart = function(session, channel){
+    if(chatOnlyStarted) return;
+    chatOnlyStarted = true;
+    if(session && session.token && session.loginName){
+      localStorage.setItem(LS.token, session.token);
+      localStorage.setItem(LS.login, session.login || session.loginName);
+      localStorage.setItem(LS.loginName, session.loginName);
+      document.body.classList.add('can-send');
+    } else {
+      // Signed out on the main window — make sure no old session lingers here.
+      localStorage.removeItem(LS.token);
+      localStorage.removeItem(LS.login);
+      localStorage.removeItem(LS.loginName);
+    }
+    watchChannel(channel || ch);
+  };
+
+  // Fallback: if the session never arrives (e.g. an older app build), still show chat, read-only.
+  setTimeout(() => {
+    if(!chatOnlyStarted && ch){
+      chatOnlyStarted = true;
+      localStorage.removeItem(LS.token);
+      localStorage.removeItem(LS.login);
+      localStorage.removeItem(LS.loginName);
+      watchChannel(ch);
+    }
+  }, 3000);
 }
 
 // The Twitch sign-in tab is a separate window from this app (see signIn()) —
