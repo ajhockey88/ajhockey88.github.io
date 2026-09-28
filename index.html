@@ -207,6 +207,14 @@ main{
   padding:8px 10px; background:#000; color:#fff; border-left:1px solid var(--border);
   display:flex; flex-direction:column; gap:4px;
 }
+/* Pushes sparse content down to the bottom of the panel (empty space at top,
+   not bottom) without the well-known flex "justify-content:flex-end + overflow"
+   bug, where browsers can fail to compute real overflow once content actually
+   exceeds the container — silently making older messages unreachable by
+   scrolling. An auto-margin on whichever element is currently first collapses
+   to 0 naturally once there's no extra space to absorb, so normal scrolling
+   is preserved correctly once there's enough history to actually overflow. */
+#chat > *:first-child{margin-top:auto}
 .msg{font-size:var(--chat-font-size); line-height:1.5; word-wrap:break-word; overflow-wrap:anywhere}
 .msg .name{font-weight:700; margin-right:4px}
 .msg .emote{height:1.5em; vertical-align:middle; display:inline-block; margin:0 1px}
