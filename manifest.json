@@ -2,7 +2,7 @@
   "name": "ThorStream",
   "short_name": "ThorStream",
   "description": "Twitch chat viewer with 7TV emote support",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
