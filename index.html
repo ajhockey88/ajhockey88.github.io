@@ -1448,6 +1448,7 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
     setTimeout(noteDiag, 1000);
   };
   noteDiag();
+  if(videoWrap.querySelector('iframe')) setTimeout(() => vidNote.remove(), 4000); // iframe was added before the watcher below started
   const noteWatch = new MutationObserver(() => { if(videoWrap.querySelector('iframe')) setTimeout(() => vidNote.remove(), 1500); });
   noteWatch.observe(videoWrap, { childList:true, subtree:true });
 
