@@ -1288,7 +1288,14 @@ checkUpdateBtn.addEventListener('click', async () => {
   try{
     const res = await fetch('./manifest.json?_=' + Date.now(), { cache: 'no-cache' }).then(r => r.json());
     if(res && res.version && res.version !== APP_VERSION){
-      el.textContent = `Update available (v${res.version}) — reopen the app after it's installed to get it.`;
+      el.textContent = `Update found (v${res.version}) — updating…`;
+      try{
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }catch(e){ /* reload below still fetches fresh files */ }
+      location.reload();
     } else {
       el.textContent = "You're up to date.";
     }
