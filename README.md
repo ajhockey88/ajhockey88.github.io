@@ -24,6 +24,30 @@ It installs and runs like a real app — no browser bar, no clutter, just your s
 - 📐 Adapts automatically whether it's running on the Thor's wide top screen or its squarer bottom one
 - 🚫 No address bar, no status bar — just a clean, full-screen app
 
+## 📷 Screenshots
+
+**Tower Mode**
+<br/>
+<img width="378" height="504" alt="IMG_5931" src="https://github.com/user-attachments/assets/da7ca7eb-970e-406a-8f16-fd5232b817fc" />
+<br/>
+
+**Dual Screen Mode**
+<br/>
+<img width="450" height="504" alt="IMG_5930" src="https://github.com/user-attachments/assets/0929bbba-e8de-49ec-8aa1-8ea64b0cb2fd" />
+<br/>
+
+**Standard Mode**
+<br/>
+<img width="450" height="504" alt="IMG_5929" src="https://github.com/user-attachments/assets/36bce274-2783-4241-96c9-102ffb6e5c81" />
+<br/>
+
+**Bottom Screen Mode**
+<br/>
+<img width="450" height="504" alt="IMG_5932" src="https://github.com/user-attachments/assets/3c1ad48e-5838-4f4d-a6fe-2cc5bc796a66" />
+
+
+<br/>
+
 ## 📝 Changelog
 
 ### 1.1.2
