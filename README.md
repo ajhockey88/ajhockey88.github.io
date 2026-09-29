@@ -13,11 +13,25 @@ It installs and runs like a real app — no browser bar, no clutter, just your s
 - ✍️ **Send messages** right from the app once you're signed in
 - 👀 **Message preview** — typing something long? A clean preview card shows your full message at the top of the screen, whether you're typing on the top screen or the bottom one
 - 🖥️🖥️ **True dual-screen mode** — tap one button and the stream fills the top screen while chat pops up full-screen on the bottom, no dragging windows around. Switch streamers on the top screen and the bottom chat follows along, and closing the app closes the bottom chat too
+- 🗼 **Tower Mode** — stand the Thor on its edge: the small screen shows the stream rotated upright and the big screen shows a tall chat with a longer history (150 messages, 75 in Battery Saver)
 - 🔋 **Battery Saver** — one tap for lower video quality, still emotes instead of animated ones, and lighter chat
 - 🍃 **Easy on the battery** even without saver — chat pauses while the app sits in the background, emote lists are remembered instead of re-downloaded, and animated emotes only animate while you can actually see them
 - 🧹 **Clutter-free chat** — there are no extra banners, footers, or headers in the chat window. The bottom screen is pure chat, edge to edge, and the menu bar tucks itself away so the stream and chat get the whole screen
+- 📜 **Chat that stays put** — chat only pauses when *you* scroll up, not when emotes load or old messages are trimmed. Normal chat keeps a light 30-message history (20 in Battery Saver)
+- 🔄 **One-tap updates** — "Check for updates" in the info screen finds a newer version and reloads into it automatically
 - 📐 Adapts automatically whether it's running on the Thor's wide top screen or its squarer bottom one
 - 🚫 No address bar, no status bar — just a clean, full-screen app
+
+## 📝 Changelog
+
+### 1.1.1
+- Chat history is capped at 30 messages (20 in Battery Saver) everywhere except Tower Mode, which keeps 150 (75 in Battery Saver); the cap applies immediately when entering or leaving two-screen modes
+- Emotes start loading right away, decode off the main thread, and reserve their space so chat doesn't jump or show late icons; they're only unloaded when far off-screen
+- Chat no longer pauses by itself: only real touch, wheel or keyboard scrolling can pause it (bottom tolerance widened to 60px)
+- New app icons, with a cache-busting version so devices pick them up
+- Tower Mode video screen: fixed the video not showing by rotating the player inside an unrotated frame instead of rotating the whole wrapper, sized to the visible screen so the edges aren't cropped, and a first tap goes fullscreen to hide Chrome's address bar (`?rm=b` selects an alternate rotation method, `?rm=0` the old one)
+- "Check for updates" now clears the app's cached files and reloads into the new version
+- Service worker cache bumped to `thorstream-v4`
 
 ## 🛠️ How it's built
 
