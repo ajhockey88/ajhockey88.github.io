@@ -206,6 +206,7 @@ main{
   width:var(--chat-width); overflow-y:auto; overflow-x:hidden;
   padding:8px 10px; background:#000; color:#fff; border-left:1px solid var(--border);
   display:flex; flex-direction:column; gap:4px;
+  overscroll-behavior:contain; contain:layout style;
 }
 /* Pushes sparse content down to the bottom of the panel (empty space at top,
    not bottom) without the well-known flex "justify-content:flex-end + overflow"
@@ -378,7 +379,7 @@ const settingsSave = $('#settingsSave'), settingsCancel = $('#settingsCancel');
 const infoModal = $('#infoModal'), infoVersion = $('#infoVersion'), infoClose = $('#infoClose'), checkUpdateBtn = $('#checkUpdateBtn');
 const scrollResumeBtn = $('#scrollResumeBtn');
 
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.2';
 
 function haptic(ms){ try{ navigator.vibrate && navigator.vibrate(ms || 10); }catch(e){ /* not supported here */ } }
 
@@ -837,9 +838,10 @@ function connectIRC(channel, forceAnonymous){
   };
 
   ws.onmessage = ev => {
+    if(ws !== thisSocket) return; // late data from a socket that was already replaced or closed
     ev.data.split('\r\n').forEach(line=>{
       if(!line) return;
-      if(line.startsWith('PING')){ ws.send('PONG :tmi.twitch.tv'); return; }
+      if(line.startsWith('PING')){ try{ thisSocket.send('PONG :tmi.twitch.tv'); }catch(e){} return; }
 
       let tags = {};
       let rest = line;
@@ -905,6 +907,24 @@ function reconnectChat(){
 }
 
 
+// ---- Talking to the Tower Mode video tab ----
+// The video tab is real Chrome (a separate app), but it shares this site's storage, so a
+// BroadcastChannel / storage event reaches it. Used to switch its channel, pass battery saver,
+// and — most important — STOP its video when Tower Mode is turned off (it can't be closed
+// from here, and a leftover tab would keep decoding video in the background).
+const TOWER_STATE_KEY = 'tstv_tower_state';
+let towerChan = null;
+function towerSend(msg){
+  try{
+    if(!towerChan) towerChan = new BroadcastChannel('thorstream');
+    towerChan.postMessage(msg);
+  }catch(e){ /* BroadcastChannel unavailable — storage event below still works */ }
+}
+function setTowerState(on){
+  try{ localStorage.setItem(TOWER_STATE_KEY, (on ? 'on:' : 'off:') + Date.now()); }catch(e){}
+  if(!on) towerSend({ type:'off' });
+}
+
 // ---- Video (Twitch embed, parent = actual hosting domain) ----
 let videoLoadId = 0;
 
@@ -920,6 +940,9 @@ function mountPlainVideo(channel){
 function loadVideo(channel){
   const id = ++videoLoadId; // a newer call always wins over one still waiting on something
   videoWrap.innerHTML = '';
+  // A screen that isn't showing video (the chat screen in Tower Mode / dual mode) must not load
+  // a hidden player: it would still decode video and play audio for nobody to see.
+  if(document.body.classList.contains('role-chat') || CHAT_ONLY) return;
   if(isSaver()) loadVideoCapped(channel, id);
   else mountPlainVideo(channel);
 }
@@ -1030,6 +1053,7 @@ async function watchChannel(channel){
   if(!channel) return;
   currentChannel = channel;
   if(localStorage.getItem(LS.dualChannel)) localStorage.setItem(LS.dualChannel, channel); // keep a dual-screen partner window in sync, if active
+  if(isTowerActive()) towerSend({ type:'channel', channel }); // the Tower Mode video tab follows along
   clearChat();
   if(!document.body.classList.contains('role-chat')) loadVideo(channel); // chat-only screen never shows video — skip it to save battery
   if(document.body.classList.contains('role-video')){
@@ -1086,6 +1110,7 @@ async function startOrStopTwoScreenMode(tower){
     document.body.classList.remove('role-video', 'role-chat', 'tower-video', 'tower-chat');
     localStorage.removeItem(LS.dualChannel);
     triggerNative('dual-screen-off');
+    setTowerState(false); // tells a leftover Tower Mode video tab to stop playing
     setStatus((tower ? 'Tower mode' : 'Dual-screen mode') + ' off.');
     trimAndScroll(); // back to the small non-tower chat limit
     if(currentChannel) loadVideo(currentChannel); // re-fit video cleanly to the normal (narrower) shape
@@ -1098,6 +1123,7 @@ async function startOrStopTwoScreenMode(tower){
     return;
   }
   localStorage.setItem(LS.dualChannel, currentChannel);
+  setTowerState(!!tower);
   applyDualScreenLayout(tower);
   trimAndScroll(); // apply this mode's chat limit right away
   collapseHeader();
@@ -1147,6 +1173,7 @@ function updateSaverButton(){
 function setSaver(on){
   localStorage.setItem(SAVER_KEY, on ? '1' : '0');
   updateSaverButton();
+  if(isTowerActive()) towerSend({ type:'saver', saver: !!on });
   trimAndScroll(); // apply the smaller chat size right away
   setStatus(on ? 'Battery saver on.' : 'Battery saver off.');
   if(currentChannel){
@@ -1434,53 +1461,57 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   collapseHeader();
   document.body.classList.add('no-header-screen'); // same reasoning as the chat case above
   const videoOnlyChannel = new URLSearchParams(location.search).get('channel');
-  // Visible loading note (removed automatically once the player iframe is added) so a stuck
-  // page is distinguishable from a blank one.
+  // Battery saver isn't passed to this Chrome tab in the URL, but the site's storage is shared
+  // with the app, so read the setting from there.
+  try{ if(localStorage.getItem(SAVER_KEY) === '1') bottomSaver = true; }catch(e){}
+
+  // Small status line, shown only until the player exists (or after Tower Mode ends).
   const vidNote = document.createElement('div');
   vidNote.style.cssText = 'position:fixed;left:0;right:0;top:50%;text-align:center;color:#adadb8;font:14px sans-serif;z-index:0;transform:translateY(-50%) rotate(-90deg)';
-  vidNote.textContent = videoOnlyChannel ? 'Loading #' + videoOnlyChannel + '…' : 'Waiting for a channel…';
-  document.body.appendChild(vidNote);
+  const setVidNote = t => { vidNote.textContent = t; if(!vidNote.isConnected) document.body.appendChild(vidNote); };
+  setVidNote(videoOnlyChannel ? 'Loading #' + videoOnlyChannel + '\u2026' : 'Waiting for a channel\u2026');
   if(videoOnlyChannel){ currentChannel = videoOnlyChannel; loadVideo(videoOnlyChannel); }
-
-  // Hide Chrome's address bar: browsers only allow fullscreen after a touch, so go fullscreen
-  // on the first tap anywhere on this screen (and try immediately in case it's allowed).
-  const goFullscreen = () => {
-    const de = document.documentElement;
-    const rq = de.requestFullscreen || de.webkitRequestFullscreen;
-    if(rq && !document.fullscreenElement){ try{ const r = rq.call(de); if(r && r.catch) r.catch(()=>{}); }catch(e){} }
-  };
-  goFullscreen();
-  // The player iframe swallows taps (they never reach this page), so a transparent cover catches
-  // the first tap, goes fullscreen, then removes itself so the player stays usable.
-  const tapCover = document.createElement('div');
-  tapCover.style.cssText = 'position:fixed;inset:0;z-index:99999;background:transparent';
-  const onCoverTap = () => { goFullscreen(); vidNote.remove(); tapCover.remove(); };
-  tapCover.addEventListener('pointerdown', onCoverTap, { passive:true });
-  tapCover.addEventListener('touchend', onCoverTap, { passive:true });
-  tapCover.addEventListener('click', onCoverTap, { passive:true });
-  document.body.appendChild(tapCover);
-  ['pointerdown','touchend','click'].forEach(ev => document.addEventListener(ev, () => { goFullscreen(); vidNote.remove(); }, { passive:true }));
-  // Diagnostics on the note: shows whether the player iframe exists and how big its box is.
-  const noteDiag = () => {
-    if(!vidNote.isConnected) return;
-    const f = videoWrap.querySelector('iframe'), r = videoWrap.getBoundingClientRect();
-    vidNote.textContent = (videoOnlyChannel ? 'Loading #' + videoOnlyChannel + '\u2026' : 'Waiting for a channel\u2026')
-      + ' | iframe:' + (f ? 'yes' : 'NO') + ' | box:' + Math.round(r.width) + 'x' + Math.round(r.height)
-      + ' | win:' + innerWidth + 'x' + innerHeight + ' | tower:' + (towerFlagForVideo ? '1' : '0');
-    setTimeout(noteDiag, 1000);
-  };
-  noteDiag();
-  if(videoWrap.querySelector('iframe')) setTimeout(() => vidNote.remove(), 4000); // iframe was added before the watcher below started
-  const noteWatch = new MutationObserver(() => { if(videoWrap.querySelector('iframe')) setTimeout(() => vidNote.remove(), 1500); });
+  const noteWatch = new MutationObserver(() => {
+    if(videoWrap.querySelector('iframe')){ noteWatch.disconnect(); setTimeout(() => vidNote.remove(), 1500); }
+  });
   noteWatch.observe(videoWrap, { childList:true, subtree:true });
 
-  // Stay in sync if the main (chat) window switches channels later.
+  // Tower Mode ended: this tab can't be closed from the app, so stop the video (no decoding,
+  // no network, no audio) and leave a note. Nothing runs in this tab afterwards.
+  let towerEnded = false;
+  function endVideoTab(){
+    if(towerEnded) return;
+    towerEnded = true;
+    videoLoadId++;
+    noteWatch.disconnect();
+    videoWrap.innerHTML = '';
+    setVidNote('Tower Mode is off \u2014 you can close this tab.');
+    try{ window.close(); }catch(e){}
+  }
+  function towerIsOff(){
+    try{ return (localStorage.getItem(TOWER_STATE_KEY) || '').indexOf('off:') === 0; }catch(e){ return false; }
+  }
+  function onTowerMessage(m){
+    if(!m || towerEnded) return;
+    if(m.type === 'off') endVideoTab();
+    else if(m.type === 'channel' && m.channel && m.channel !== currentChannel){
+      currentChannel = m.channel; loadVideo(m.channel);
+    } else if(m.type === 'saver' && typeof m.saver === 'boolean' && m.saver !== bottomSaver){
+      bottomSaver = m.saver; if(currentChannel) loadVideo(currentChannel);
+    }
+  }
+  try{
+    const bc = new BroadcastChannel('thorstream');
+    bc.onmessage = e => onTowerMessage(e.data);
+  }catch(e){ /* storage event below covers it */ }
+  window.addEventListener('storage', e => { if(e.key === TOWER_STATE_KEY && towerIsOff()) endVideoTab(); });
+  // A tab that was sitting in the background (or restored by Chrome) re-checks when it comes back.
+  document.addEventListener('visibilitychange', () => { if(!document.hidden && towerIsOff() && !towerEnded) endVideoTab(); });
+
+  // Stay in sync if the main window switches channels (older app builds call this directly).
   window.__thorstreamUpdate = function(u){
     if(!u || !u.channel) return;
-    if(u.channel !== currentChannel){
-      currentChannel = u.channel;
-      loadVideo(u.channel);
-    }
+    onTowerMessage({ type:'channel', channel:u.channel });
   };
 }
 
