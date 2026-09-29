@@ -1418,10 +1418,11 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   // than waiting for a native hand-off.
   const towerFlagForVideo = new URLSearchParams(location.search).get('tower') === '1';
   applyDualScreenLayout(towerFlagForVideo);
-  // Experiment: the CSS-rotated wrapper makes Chrome on the Thor draw nothing. ?rm=a rotates
+  // The CSS-rotated wrapper makes Chrome on the Thor draw nothing. Mode a rotates
   // only the iframe inside an unrotated wrapper; ?rm=b uses the standalone rotate/translate
   // properties instead of transform.
-  const rotMode = new URLSearchParams(location.search).get('rm');
+  // Mode a is the default because it is the one confirmed to play on the Thor; ?rm=0 turns it off.
+  const rotMode = new URLSearchParams(location.search).get('rm') || 'a';
   if(towerFlagForVideo && (rotMode === 'a' || rotMode === 'b')){
     const st = document.createElement('style');
     st.textContent = rotMode === 'a'
