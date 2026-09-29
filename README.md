@@ -26,6 +26,12 @@ It installs and runs like a real app — no browser bar, no clutter, just your s
 
 ## 📝 Changelog
 
+### 1.1.2
+- Tower Mode: the main screen no longer loads a hidden second copy of the stream (it was decoding video and playing audio for nobody to see)
+- Turning Tower Mode off now stops the Tower Mode video tab (no more background decoding), and switching channels or Battery Saver on the main screen carries over to that tab
+- Removed the fullscreen request and tap cover from the Tower Mode video screen, which also removes Chrome's "swipe down to exit full screen" popup; the small on-screen diagnostics and their 1-second timer are gone
+- Chat: late data from a replaced connection is ignored, and the chat list is layout-contained for cheaper redraws
+
 ### 1.1.1
 - Chat history is capped at 30 messages (20 in Battery Saver) everywhere except Tower Mode, which keeps 150 (75 in Battery Saver); the cap applies immediately when entering or leaving two-screen modes
 - Emotes start loading right away, decode off the main thread, and reserve their space so chat doesn't jump or show late icons; they're only unloaded when far off-screen
