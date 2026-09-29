@@ -925,6 +925,9 @@ function setTowerState(on){
   if(!on) towerSend({ type:'off' });
 }
 
+// If the app window itself is being destroyed while Tower Mode is on, tell the video tab to stop.
+window.addEventListener('pagehide', e => { if(!e.persisted && !SECOND_SCREEN && isTowerActive()) setTowerState(false); });
+
 // ---- Video (Twitch embed, parent = actual hosting domain) ----
 let videoLoadId = 0;
 
@@ -1476,6 +1479,22 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   });
   noteWatch.observe(videoWrap, { childList:true, subtree:true });
 
+  // Hide Chrome's address bar. Browsers only allow fullscreen after a touch, so go fullscreen on
+  // the first tap (and try right away in case it's allowed). The player iframe swallows taps, so
+  // a transparent cover catches the first one and then removes itself so the player stays usable.
+  // (Chrome shows its own "swipe down to exit full screen" hint when this happens.)
+  const goFullscreen = () => {
+    const de = document.documentElement;
+    const rq = de.requestFullscreen || de.webkitRequestFullscreen;
+    if(rq && !document.fullscreenElement){ try{ const r = rq.call(de); if(r && r.catch) r.catch(()=>{}); }catch(e){} }
+  };
+  goFullscreen();
+  const tapCover = document.createElement('div');
+  tapCover.style.cssText = 'position:fixed;inset:0;z-index:99999;background:transparent';
+  const onCoverTap = () => { goFullscreen(); vidNote.remove(); tapCover.remove(); };
+  ['pointerdown','touchend','click'].forEach(ev => tapCover.addEventListener(ev, onCoverTap, { passive:true }));
+  document.body.appendChild(tapCover);
+
   // Tower Mode ended: this tab can't be closed from the app, so stop the video (no decoding,
   // no network, no audio) and leave a note. Nothing runs in this tab afterwards.
   let towerEnded = false;
@@ -1484,9 +1503,15 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
     towerEnded = true;
     videoLoadId++;
     noteWatch.disconnect();
-    videoWrap.innerHTML = '';
+    try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+    videoWrap.innerHTML = '';   // unloads the Twitch player: no decoding, network or audio
+    tapCover.remove();
     setVidNote('Tower Mode is off \u2014 you can close this tab.');
+    // Close the tab. Chrome allows a page to close itself when it was the tab's only history
+    // entry (true for a tab opened straight from the app); if it refuses, blank the page so
+    // nothing at all keeps running in it.
     try{ window.close(); }catch(e){}
+    setTimeout(() => { try{ if(!window.closed) location.replace('about:blank'); }catch(e){} }, 400);
   }
   function towerIsOff(){
     try{ return (localStorage.getItem(TOWER_STATE_KEY) || '').indexOf('off:') === 0; }catch(e){ return false; }
