@@ -1450,6 +1450,15 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
     if(rq && !document.fullscreenElement){ try{ const r = rq.call(de); if(r && r.catch) r.catch(()=>{}); }catch(e){} }
   };
   goFullscreen();
+  // The player iframe swallows taps (they never reach this page), so a transparent cover catches
+  // the first tap, goes fullscreen, then removes itself so the player stays usable.
+  const tapCover = document.createElement('div');
+  tapCover.style.cssText = 'position:fixed;inset:0;z-index:99999;background:transparent';
+  const onCoverTap = () => { goFullscreen(); vidNote.remove(); tapCover.remove(); };
+  tapCover.addEventListener('pointerdown', onCoverTap, { passive:true });
+  tapCover.addEventListener('touchend', onCoverTap, { passive:true });
+  tapCover.addEventListener('click', onCoverTap, { passive:true });
+  document.body.appendChild(tapCover);
   ['pointerdown','touchend','click'].forEach(ev => document.addEventListener(ev, () => { goFullscreen(); vidNote.remove(); }, { passive:true }));
   // Diagnostics on the note: shows whether the player iframe exists and how big its box is.
   const noteDiag = () => {
