@@ -1,4 +1,4 @@
-const CACHE = 'thorstream-v3'; // bumped so devices drop the old cache, which could grow without limit
+const CACHE = 'thorstream-v4';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

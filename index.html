@@ -6,8 +6,8 @@
 <title>ThorStream</title>
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#9147ff">
-<link rel="icon" href="./icon-192.png">
-<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png?v=2">
+<link rel="apple-touch-icon" href="./icon-192.png?v=2">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -217,7 +217,7 @@ main{
 #chat > *:first-child{margin-top:auto}
 .msg{font-size:var(--chat-font-size); line-height:1.5; word-wrap:break-word; overflow-wrap:anywhere}
 .msg .name{font-weight:700; margin-right:4px}
-.msg .emote{height:1.5em; vertical-align:middle; display:inline-block; margin:0 1px}
+.msg .emote{height:1.5em; min-width:1.5em; object-fit:contain; vertical-align:middle; display:inline-block; margin:0 1px}
 .sysmsg{font-size:11px; color:#9a9a9a; font-style:italic}
 a{color:var(--accent)}
 
@@ -256,7 +256,7 @@ body.tower-chat #chat{
 <body>
 <button id="revealTab" class="ghost-btn">▾ menu</button>
 <header id="header">
-  <span class="brand"><img src="./icon-192.png" alt="" class="brand-icon">ThorStream</span>
+  <span class="brand"><img src="./icon-192.png?v=2" alt="" class="brand-icon">ThorStream</span>
   <button id="signInBtn" class="ghost-btn">Sign in with Twitch</button>
   <button id="dualScreenBtn" class="ghost-btn" title="Dual-screen mode">
     <svg width="18" height="14" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:-2px;margin-right:5px">
@@ -339,7 +339,7 @@ body.tower-chat #chat{
 
 <div id="infoModal" class="modal-overlay hidden">
   <div class="modal-box info-box">
-    <div class="info-head"><img src="./icon-192.png" alt="" class="info-icon"><div><h2>ThorStream</h2><div class="info-version">Version <span id="infoVersion"></span></div></div></div>
+    <div class="info-head"><img src="./icon-192.png?v=2" alt="" class="info-icon"><div><h2>ThorStream</h2><div class="info-version">Version <span id="infoVersion"></span></div></div></div>
     <div class="info-section">
       <h3>How to use it</h3>
       <ul>
@@ -378,7 +378,7 @@ const settingsSave = $('#settingsSave'), settingsCancel = $('#settingsCancel');
 const infoModal = $('#infoModal'), infoVersion = $('#infoVersion'), infoClose = $('#infoClose'), checkUpdateBtn = $('#checkUpdateBtn');
 const scrollResumeBtn = $('#scrollResumeBtn');
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 
 function haptic(ms){ try{ navigator.vibrate && navigator.vibrate(ms || 10); }catch(e){ /* not supported here */ } }
 
@@ -429,7 +429,16 @@ const SECOND_SCREEN = CHAT_ONLY || new URLSearchParams(location.search).get('scr
 const SAVER_KEY = 'tstv_saver';
 let bottomSaver = new URLSearchParams(location.search).get('saver') === '1';
 function isSaver(){ return SECOND_SCREEN ? bottomSaver : localStorage.getItem(SAVER_KEY) === '1'; }
-function chatMax(){ return isSaver() ? 75 : 150; }
+// Big history (150/75) is only for Tower Mode's tall chat screen. Single-screen and normal
+// dual-screen keep the small, light limit (30, or 20 in battery saver).
+function isTowerMode(){
+  return document.body.classList.contains('tower-chat') || document.body.classList.contains('tower-video')
+    || new URLSearchParams(location.search).get('tower') === '1';
+}
+function chatMax(){
+  if(isTowerMode()) return isSaver() ? 75 : 150;
+  return isSaver() ? 20 : 30;
+}
 function chatFlushMs(){ return isSaver() ? 1000 : 250; }
 
 async function signIn(){
@@ -700,17 +709,19 @@ const emoteObserver = new IntersectionObserver((entries)=>{
   entries.forEach(entry=>{
     const img = entry.target;
     if(entry.isIntersecting){
-      if(img.src !== img.dataset.src) img.src = img.dataset.src;
+      if(img.getAttribute('src') !== img.dataset.src) img.src = img.dataset.src;
     } else {
-      img.removeAttribute('src'); // stops animation/decoding entirely while scrolled away
+      img.removeAttribute('src'); // stops animation/decoding entirely while scrolled far away
     }
   });
-}, { root: chatEl, rootMargin: '50px' });
+}, { root: chatEl, rootMargin: '400px' });
 
 function makeEmoteImg(url, alt){
   const img = document.createElement('img');
   img.className = 'emote';
   img.dataset.src = url;
+  img.src = url;            // start loading right away — waiting for the observer made icons appear late
+  img.decoding = 'async';   // decode off the main thread so chat doesn't stutter
   img.alt = alt;
   img.title = alt;
   emoteObserver.observe(img);
@@ -1076,6 +1087,7 @@ async function startOrStopTwoScreenMode(tower){
     localStorage.removeItem(LS.dualChannel);
     triggerNative('dual-screen-off');
     setStatus((tower ? 'Tower mode' : 'Dual-screen mode') + ' off.');
+    trimAndScroll(); // back to the small non-tower chat limit
     if(currentChannel) loadVideo(currentChannel); // re-fit video cleanly to the normal (narrower) shape
     reconnectChat(); // chat was paused on this screen while the other screen showed it
     return;
@@ -1087,6 +1099,7 @@ async function startOrStopTwoScreenMode(tower){
   }
   localStorage.setItem(LS.dualChannel, currentChannel);
   applyDualScreenLayout(tower);
+  trimAndScroll(); // apply this mode's chat limit right away
   collapseHeader();
   // The chat pane is hidden on this screen in dual/tower mode (the other screen shows it), so
   // stop receiving and rendering every message here for nobody to see.
@@ -1286,7 +1299,7 @@ checkUpdateBtn.addEventListener('click', async () => {
 
 // ---- Chat: pause auto-scroll while the user is looking at older messages ----
 function nearChatBottom(){
-  return chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 40;
+  return chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 60;
 }
 const scrollResumeText = $('#scrollResumeText');
 function updateScrollResumeCount(){
@@ -1294,9 +1307,20 @@ function updateScrollResumeCount(){
   scrollResumeText.textContent = n > 0 ? (n + (n === 1 ? ' new message' : ' new messages')) : 'New messages';
 }
 
+// Only a real finger/wheel/keyboard scroll may pause chat. Content changes (emotes loading,
+// old messages being trimmed) can shift the scroll position on their own, and that used to
+// look like "the user scrolled up" and froze chat until the button was pressed.
+let userScrolling = false, userScrollTimer = null;
+function markUserScroll(){
+  userScrolling = true;
+  clearTimeout(userScrollTimer);
+  userScrollTimer = setTimeout(() => { userScrolling = false; }, 600);
+}
+['touchstart','touchmove','wheel','pointerdown','keydown'].forEach(ev =>
+  chatEl.addEventListener(ev, markUserScroll, { passive:true }));
 chatEl.addEventListener('scroll', () => {
   const atBottom = nearChatBottom();
-  if(!atBottom && !autoScrollPaused){
+  if(!atBottom && !autoScrollPaused && userScrolling){
     autoScrollPaused = true;
     updateScrollResumeCount();
     scrollResumeBtn.classList.remove('hidden');
@@ -1390,7 +1414,25 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   collapseHeader();
   document.body.classList.add('no-header-screen'); // same reasoning as the chat case above
   const videoOnlyChannel = new URLSearchParams(location.search).get('channel');
+  // Visible loading note (removed automatically once the player iframe is added) so a stuck
+  // page is distinguishable from a blank one.
+  const vidNote = document.createElement('div');
+  vidNote.style.cssText = 'position:fixed;left:0;right:0;top:50%;text-align:center;color:#adadb8;font:14px sans-serif;z-index:0;transform:translateY(-50%) rotate(-90deg)';
+  vidNote.textContent = videoOnlyChannel ? 'Loading #' + videoOnlyChannel + '…' : 'Waiting for a channel…';
+  document.body.appendChild(vidNote);
   if(videoOnlyChannel){ currentChannel = videoOnlyChannel; loadVideo(videoOnlyChannel); }
+
+  // Hide Chrome's address bar: browsers only allow fullscreen after a touch, so go fullscreen
+  // on the first tap anywhere on this screen (and try immediately in case it's allowed).
+  const goFullscreen = () => {
+    const de = document.documentElement;
+    const rq = de.requestFullscreen || de.webkitRequestFullscreen;
+    if(rq && !document.fullscreenElement){ try{ const r = rq.call(de); if(r && r.catch) r.catch(()=>{}); }catch(e){} }
+  };
+  goFullscreen();
+  ['pointerdown','touchend','click'].forEach(ev => document.addEventListener(ev, () => { goFullscreen(); vidNote.remove(); }, { passive:true }));
+  const noteWatch = new MutationObserver(() => { if(videoWrap.querySelector('iframe')) setTimeout(() => vidNote.remove(), 1500); });
+  noteWatch.observe(videoWrap, { childList:true, subtree:true });
 
   // Stay in sync if the main (chat) window switches channels later.
   window.__thorstreamUpdate = function(u){
