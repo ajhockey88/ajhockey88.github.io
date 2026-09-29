@@ -1418,6 +1418,18 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   // than waiting for a native hand-off.
   const towerFlagForVideo = new URLSearchParams(location.search).get('tower') === '1';
   applyDualScreenLayout(towerFlagForVideo);
+  // Experiment: the CSS-rotated wrapper makes Chrome on the Thor draw nothing. ?rm=a rotates
+  // only the iframe inside an unrotated wrapper; ?rm=b uses the standalone rotate/translate
+  // properties instead of transform.
+  const rotMode = new URLSearchParams(location.search).get('rm');
+  if(towerFlagForVideo && (rotMode === 'a' || rotMode === 'b')){
+    const st = document.createElement('style');
+    st.textContent = rotMode === 'a'
+      ? 'body.tower-video #videoWrap{top:0;left:0;width:100vw;height:100vh;transform:none;overflow:hidden}'
+        + 'body.tower-video #videoWrap iframe{inset:auto;top:50%;left:50%;width:100vh;height:100vw;transform:translate(-50%,-50%) rotate(-90deg)}'
+      : 'body.tower-video #videoWrap{transform:none;translate:-50% -50%;rotate:-90deg}';
+    document.head.appendChild(st);
+  }
   collapseHeader();
   document.body.classList.add('no-header-screen'); // same reasoning as the chat case above
   const videoOnlyChannel = new URLSearchParams(location.search).get('channel');
