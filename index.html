@@ -1426,8 +1426,8 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   if(towerFlagForVideo && (rotMode === 'a' || rotMode === 'b')){
     const st = document.createElement('style');
     st.textContent = rotMode === 'a'
-      ? 'body.tower-video #videoWrap{top:0;left:0;width:100vw;height:100vh;transform:none;overflow:hidden}'
-        + 'body.tower-video #videoWrap iframe{inset:auto;top:50%;left:50%;width:100vh;height:100vw;transform:translate(-50%,-50%) rotate(-90deg)}'
+      ? 'body.tower-video #videoWrap{top:0;left:0;width:100vw;height:100vh;height:100dvh;transform:none;overflow:hidden}'
+        + 'body.tower-video #videoWrap iframe{inset:auto;top:50%;left:50%;width:100vh;width:100dvh;height:100vw;transform:translate(-50%,-50%) rotate(-90deg)}'
       : 'body.tower-video #videoWrap{transform:none;translate:-50% -50%;rotate:-90deg}';
     document.head.appendChild(st);
   }
