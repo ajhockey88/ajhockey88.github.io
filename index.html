@@ -1288,7 +1288,14 @@ checkUpdateBtn.addEventListener('click', async () => {
   try{
     const res = await fetch('./manifest.json?_=' + Date.now(), { cache: 'no-cache' }).then(r => r.json());
     if(res && res.version && res.version !== APP_VERSION){
-      el.textContent = `Update available (v${res.version}) — reopen the app after it's installed to get it.`;
+      el.textContent = `Update found (v${res.version}) — updating…`;
+      try{
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }catch(e){ /* reload below still fetches fresh files */ }
+      location.reload();
     } else {
       el.textContent = "You're up to date.";
     }
@@ -1431,6 +1438,16 @@ if(new URLSearchParams(location.search).get('screen') === 'chat'){
   };
   goFullscreen();
   ['pointerdown','touchend','click'].forEach(ev => document.addEventListener(ev, () => { goFullscreen(); vidNote.remove(); }, { passive:true }));
+  // Diagnostics on the note: shows whether the player iframe exists and how big its box is.
+  const noteDiag = () => {
+    if(!vidNote.isConnected) return;
+    const f = videoWrap.querySelector('iframe'), r = videoWrap.getBoundingClientRect();
+    vidNote.textContent = (videoOnlyChannel ? 'Loading #' + videoOnlyChannel + '\u2026' : 'Waiting for a channel\u2026')
+      + ' | iframe:' + (f ? 'yes' : 'NO') + ' | box:' + Math.round(r.width) + 'x' + Math.round(r.height)
+      + ' | win:' + innerWidth + 'x' + innerHeight + ' | tower:' + (towerFlagForVideo ? '1' : '0');
+    setTimeout(noteDiag, 1000);
+  };
+  noteDiag();
   const noteWatch = new MutationObserver(() => { if(videoWrap.querySelector('iframe')) setTimeout(() => vidNote.remove(), 1500); });
   noteWatch.observe(videoWrap, { childList:true, subtree:true });
 
