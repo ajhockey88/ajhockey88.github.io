@@ -1,6 +1,7 @@
 # 🌩️ ThorStream
 [![Downloads](https://img.shields.io/github/downloads/ajhockey88/ajhockey88.github.io/total?style=for-the-badge&logo=github&logoColor=white&label=Downloads)](https://github.com/ajhockey88/ajhockey88.github.io/releases)
 [![Latest Release](https://img.shields.io/github/v/release/ajhockey88/ajhockey88.github.io?style=for-the-badge&logo=github&logoColor=white&label=Latest%20Release)](https://github.com/ajhockey88/ajhockey88.github.io/releases/latest)
+[![Reddit Post](https://img.shields.io/badge/Reddit-View%20Post-FF4500?style=for-the-badge&logo=reddit&logoColor=white)](https://www.reddit.com/r/AynThor/comments/1wt0bwc/thorstream_a_twitch_viewer_built_for_the_ayn/)
 
 A Twitch viewer built just for the **AYN Thor**'s dual-screen hardware — watch your stream on one screen and read chat on the other, with full [7TV](https://7tv.app/) emote support built right in. 🎮📺
 
